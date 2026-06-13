@@ -190,7 +190,7 @@ export default function App() {
         console.warn("[AUTH] State resolution took too long. Initializing workspace directly in Sandbox mode.");
         setAuthLoading(false);
         loadAllDatabaseStates();
-      }, 1500);
+      }, 5000);
 
       const unsubscribe = auth.onAuthStateChanged((currUser: any) => {
         if (authTimeout) clearTimeout(authTimeout);
@@ -471,23 +471,17 @@ export default function App() {
 
   // Action: Bulk Google Sheet Imports
   const handleImportLeads = async (importedLeads: Lead[]) => {
-    for (const l of importedLeads) {
-      await dataService.saveLead(l);
-    }
+    await Promise.all(importedLeads.map((l) => dataService.saveLead(l)));
     await loadAllDatabaseStates();
   };
 
   const handleImportPerformance = async (importedPerf: CampaignPerformance[]) => {
-    for (const p of importedPerf) {
-      await dataService.saveCampaignPerformance(p);
-    }
+    await Promise.all(importedPerf.map((p) => dataService.saveCampaignPerformance(p)));
     await loadAllDatabaseStates();
   };
 
   const handleImportTargets = async (importedTargets: TargetBudgetRow[]) => {
-    for (const t of importedTargets) {
-      await dataService.saveTargetBudget(t);
-    }
+    await Promise.all(importedTargets.map((t) => dataService.saveTargetBudget(t)));
     await loadAllDatabaseStates();
   };
 
@@ -604,45 +598,27 @@ export default function App() {
               </div>
             )}
 
-            {/* Firebase Auth details */}
-            {isFirebaseEnabled && auth && (
-              <div className="flex items-center gap-2">
-                {user ? (
-                  <div className="flex items-center gap-2">
-                    <div className="text-right hidden md:block">
-                      <div className="text-xs font-bold text-slate-800 leading-none">{user.displayName}</div>
-                      <span className="text-[9px] text-slate-400 leading-none">{user.email}</span>
-                    </div>
-                    {user.photoURL ? (
-                      <img
-                        src={user.photoURL}
-                        alt="Profile avatar"
-                        className="w-8 h-8 rounded-full border border-slate-200 shadow-xs"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs font-bold font-display">
-                        {user.displayName?.[0] || "U"}
-                      </div>
-                    )}
-                    <button
-                      onClick={handleSignOut}
-                      className="p-1 px-2 border border-slate-200 hover:text-rose-500 hover:border-rose-100 rounded text-[11px] font-semibold cursor-pointer transition-all"
-                      title="Log Out User"
-                    >
-                      <LogOut size={12} />
-                    </button>
+            {/* Authorized Teammate details */}
+            <div className="flex items-center gap-2">
+              {user && (
+                <div className="flex items-center gap-2">
+                  <div className="text-right hidden md:block">
+                    <div className="text-xs font-bold text-slate-800 leading-none capitalize">{user.displayName || user.email.split("@")[0]}</div>
+                    <span className="text-[9px] text-slate-400 font-semibold leading-none">{user.email}</span>
                   </div>
-                ) : (
+                  <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs font-bold font-display uppercase shadow-xs">
+                    {(user.displayName || user.email)?.[0] || "U"}
+                  </div>
                   <button
-                    onClick={handleGoogleSignIn}
-                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 font-bold text-xs text-white px-3.5 py-1.5 rounded-lg shadow-sm font-display transition-all cursor-pointer"
+                    onClick={handleSignOut}
+                    className="p-1 px-2 border border-slate-200 hover:text-rose-500 hover:border-rose-100 rounded-xl text-[11px] font-semibold cursor-pointer transition-all bg-white"
+                    title="Log Out User"
                   >
-                    <LogIn size={13} />
-                    Google Login
+                    <LogOut size={12} />
                   </button>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

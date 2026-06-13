@@ -28,6 +28,18 @@ const KEYS = {
   INVITES: "marketing_copilot_invites",
 };
 
+// Seed-level root logins
+export const INITIAL_INVITES: Invite[] = [
+  {
+    id: "inv-root-admin",
+    email: "gouthamarun123@gmail.com",
+    role: "Admin",
+    invitedBy: "System Root",
+    status: "accepted",
+    createdAt: new Date("2026-06-01T00:00:00Z").toISOString(),
+  }
+];
+
 // Seamless visual placeholders for creative graphics
 const CREATIVE_GAMES_PLACEHOLDER = "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=800&q=80";
 const CREATIVE_SOLAR_PLACEHOLDER = "https://images.unsplash.com/photo-1509391366360-2e959784a276?auto=format&fit=crop&w=800&q=80";
@@ -572,14 +584,13 @@ function getDocRef(name: string, docId: string) {
   return doc(db, name, docId);
 }
 
-const FIRESTORE_TIMEOUT_MS = 1500;
+const FIRESTORE_TIMEOUT_MS = 8000;
 
 async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
   let timer: any;
   const timeoutPromise = new Promise<T>((resolve) => {
     timer = setTimeout(() => {
-      console.warn(`[FIREBASE] Request timed out. Disabling Firebase sync to let the app load securely via Local Sandbox.`);
-      disableFirebaseSync();
+      console.warn(`[FIREBASE] Request timed out. Using local cache fallback for this specific action so the app stays responsive.`);
       resolve(fallback);
     }, FIRESTORE_TIMEOUT_MS);
   });
@@ -590,6 +601,26 @@ async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
     return result;
   } catch (err) {
     clearTimeout(timer);
+    throw err;
+  }
+}
+
+const FIRESTORE_WRITE_TIMEOUT_MS = 3000;
+
+async function withWriteTimeout(promise: Promise<any>, path: string): Promise<any> {
+  let timer: any;
+  const timeoutPromise = new Promise<any>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`[FIREBASE] Write request to ${path} timed out after ${FIRESTORE_WRITE_TIMEOUT_MS}ms.`));
+    }, FIRESTORE_WRITE_TIMEOUT_MS);
+  });
+
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    if (timer) clearTimeout(timer);
+    return result;
+  } catch (err) {
+    if (timer) clearTimeout(timer);
     throw err;
   }
 }
@@ -645,105 +676,84 @@ export const dataService = {
       logDescription = `Updated campaign '${finalCampaign.name}' fields. Budget: $${finalCampaign.budget}, Status: '${finalCampaign.status}'.`;
     }
 
+    // 1. Local Cache (Always updated first for lightning-fast UI response)
+    const list = loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS);
+    const idx = list.findIndex((c) => c.id === campaign.id);
+    if (idx !== -1) {
+      const prev = list[idx];
+      const changes: string[] = [];
+      if (prev.budget !== finalCampaign.budget) changes.push(`Budget altered from $${prev.budget} to $${finalCampaign.budget}`);
+      if (prev.status !== finalCampaign.status) changes.push(`Status converted from '${prev.status}' to '${finalCampaign.status}'`);
+      if (prev.name !== finalCampaign.name) changes.push(`Name retitled from '${prev.name}' to '${finalCampaign.name}'`);
+      if (prev.spend !== finalCampaign.spend) changes.push(`Spend changed from $${prev.spend} to $${finalCampaign.spend}`);
+      if (prev.conversions !== finalCampaign.conversions) changes.push(`Conversions adjusted from ${prev.conversions} to ${finalCampaign.conversions}`);
+
+      logDescription = changes.length > 0
+        ? `Altered campaign '${finalCampaign.name}': ` + changes.join("; ")
+        : `Saved updates on campaign '${finalCampaign.name}'.`;
+
+      list[idx] = finalCampaign;
+    } else {
+      list.push(finalCampaign);
+    }
+    saveLocal(KEYS.CAMPAIGNS, list);
+
+    // Record Audit trail log locally
+    const logs = loadLocal<AuditLog>(KEYS.AUDIT_LOGS, INITIAL_AUDITS);
+    const logRecord: AuditLog = {
+      id: "log-" + Math.random().toString(36).substring(2, 9),
+      campaignId: activeId,
+      campaignName: finalCampaign.name,
+      changedBy: loggedInUserEmail || "anonymous_ops",
+      action: isNew ? "Create Campaign" : "Update Campaign",
+      details: logDescription,
+      timestamp: new Date().toISOString(),
+    };
+    logs.unshift(logRecord);
+    saveLocal(KEYS.AUDIT_LOGS, logs);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("campaigns", activeId), finalCampaign);
-        // Create an audit trail record
-        const logId = "log-" + Math.random().toString(36).substring(2, 9);
-        const logRecord: AuditLog = {
-          id: logId,
-          campaignId: activeId,
-          campaignName: finalCampaign.name,
-          changedBy: loggedInUserEmail || "anonymous_ops",
-          action: isNew ? "Create Campaign" : "Update Campaign",
-          details: logDescription,
-          timestamp: new Date().toISOString(),
-        };
-        await setDoc(getDocRef("audit_logs", logId), logRecord);
+        await withWriteTimeout(setDoc(getDocRef("campaigns", activeId), finalCampaign), `campaigns/${activeId}`);
+        await withWriteTimeout(setDoc(getDocRef("audit_logs", logRecord.id), logRecord), `audit_logs/${logRecord.id}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `campaigns/${activeId}`);
+        console.warn("[FIREBASE] saveCampaign Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      // LocalStorage mode
-      const list = loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS);
-      const idx = list.findIndex((c) => c.id === campaign.id);
-      if (idx !== -1) {
-        // Log differences specifically
-        const prev = list[idx];
-        const changes: string[] = [];
-        if (prev.budget !== finalCampaign.budget) changes.push(`Budget altered from $${prev.budget} to $${finalCampaign.budget}`);
-        if (prev.status !== finalCampaign.status) changes.push(`Status converted from '${prev.status}' to '${finalCampaign.status}'`);
-        if (prev.name !== finalCampaign.name) changes.push(`Name retitled from '${prev.name}' to '${finalCampaign.name}'`);
-        if (prev.spend !== finalCampaign.spend) changes.push(`Spend changed from $${prev.spend} to $${finalCampaign.spend}`);
-        if (prev.conversions !== finalCampaign.conversions) changes.push(`Conversions adjusted from ${prev.conversions} to ${finalCampaign.conversions}`);
-
-        logDescription = changes.length > 0 
-          ? `Altered campaign '${finalCampaign.name}': ` + changes.join("; ")
-          : `Saved updates on campaign '${finalCampaign.name}'.`;
-
-        list[idx] = finalCampaign;
-      } else {
-        list.push(finalCampaign);
-      }
-      saveLocal(KEYS.CAMPAIGNS, list);
-
-      // Record Audit trail log
-      const logs = loadLocal<AuditLog>(KEYS.AUDIT_LOGS, INITIAL_AUDITS);
-      const logRecord: AuditLog = {
-        id: "log-" + Math.random().toString(36).substring(2, 9),
-        campaignId: activeId,
-        campaignName: finalCampaign.name,
-        changedBy: loggedInUserEmail || "anonymous_ops",
-        action: isNew ? "Create Campaign" : "Update Campaign",
-        details: logDescription,
-        timestamp: new Date().toISOString(),
-      };
-      logs.unshift(logRecord);
-      saveLocal(KEYS.AUDIT_LOGS, logs);
     }
 
     return finalCampaign;
   },
 
   async deleteCampaign(id: string, name: string, loggedInUserEmail: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS);
+    const filtered = list.filter((c) => c.id !== id);
+    saveLocal(KEYS.CAMPAIGNS, filtered);
+
+    const logs = loadLocal<AuditLog>(KEYS.AUDIT_LOGS, INITIAL_AUDITS);
+    const logRecord: AuditLog = {
+      id: "log-" + Math.random().toString(36).substring(2, 9),
+      campaignId: id,
+      campaignName: name,
+      changedBy: loggedInUserEmail || "anonymous_ops",
+      action: "Delete Campaign",
+      details: `Permenently deleted campaign '${name}' from database tracking system.`,
+      timestamp: new Date().toISOString(),
+    };
+    logs.unshift(logRecord);
+    saveLocal(KEYS.AUDIT_LOGS, logs);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("campaigns", id));
-        // Add audit trail record
-        const logId = "log-" + Math.random().toString(36).substring(2, 9);
-        const logRecord: AuditLog = {
-          id: logId,
-          campaignId: id,
-          campaignName: name,
-          changedBy: loggedInUserEmail || "anonymous_ops",
-          action: "Delete Campaign",
-          details: `Permenently deleted campaign '${name}' from database tracking system.`,
-          timestamp: new Date().toISOString(),
-        };
-        await setDoc(getDocRef("audit_logs", logId), logRecord);
-        return true;
+        await withWriteTimeout(deleteDoc(getDocRef("campaigns", id)), `campaigns/${id}`);
+        await withWriteTimeout(setDoc(getDocRef("audit_logs", logRecord.id), logRecord), `audit_logs/${logRecord.id}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `campaigns/${id}`);
+        console.warn("[FIREBASE] deleteCampaign Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS);
-      const filtered = list.filter((c) => c.id !== id);
-      saveLocal(KEYS.CAMPAIGNS, filtered);
-
-      const logs = loadLocal<AuditLog>(KEYS.AUDIT_LOGS, INITIAL_AUDITS);
-      logs.unshift({
-        id: "log-" + Math.random().toString(36).substring(2, 9),
-        campaignId: id,
-        campaignName: name,
-        changedBy: loggedInUserEmail || "anonymous_ops",
-        action: "Delete Campaign",
-        details: `Permenently deleted campaign '${name}' from analytics tracking logs.`,
-        timestamp: new Date().toISOString(),
-      });
-      saveLocal(KEYS.AUDIT_LOGS, logs);
-      return true;
     }
-    return false;
+    return true;
   },
 
   // --- Audit Logs ---
@@ -828,40 +838,42 @@ export const dataService = {
       createdAt: lead.createdAt || new Date().toISOString(),
     };
 
+    // 1. Local Cache
+    const list = loadLocal<Lead>(KEYS.PORTAL_LEADS, INITIAL_LEADS);
+    const idx = list.findIndex((l) => l.id === lead.id);
+    if (idx !== -1) {
+      list[idx] = finalLead;
+    } else {
+      list.unshift(finalLead);
+    }
+    saveLocal(KEYS.PORTAL_LEADS, list);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("portal_leads", activeId), finalLead);
+        await withWriteTimeout(setDoc(getDocRef("portal_leads", activeId), finalLead), `portal_leads/${activeId}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `portal_leads/${activeId}`);
+        console.warn("[FIREBASE] saveLead Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<Lead>(KEYS.PORTAL_LEADS, INITIAL_LEADS);
-      const idx = list.findIndex((l) => l.id === lead.id);
-      if (idx !== -1) {
-        list[idx] = finalLead;
-      } else {
-        list.unshift(finalLead);
-      }
-      saveLocal(KEYS.PORTAL_LEADS, list);
     }
     return finalLead;
   },
 
   async deleteLead(id: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<Lead>(KEYS.PORTAL_LEADS, INITIAL_LEADS);
+    const filtered = list.filter((l) => l.id !== id);
+    saveLocal(KEYS.PORTAL_LEADS, filtered);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("portal_leads", id));
-        return true;
+        await withWriteTimeout(deleteDoc(getDocRef("portal_leads", id)), `portal_leads/${id}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `portal_leads/${id}`);
+        console.warn("[FIREBASE] deleteLead Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<Lead>(KEYS.PORTAL_LEADS, INITIAL_LEADS);
-      const filtered = list.filter((l) => l.id !== id);
-      saveLocal(KEYS.PORTAL_LEADS, filtered);
-      return true;
     }
-    return false;
+    return true;
   },
 
   // --- Creative Performance ---
@@ -899,40 +911,42 @@ export const dataService = {
       createdAt: creative.createdAt || new Date().toISOString(),
     };
 
+    // 1. Local Cache
+    const list = loadLocal<CreativeAsset>(KEYS.CREATIVES, INITIAL_CREATIVES);
+    const idx = list.findIndex((c) => c.id === creative.id);
+    if (idx !== -1) {
+      list[idx] = finalCreative;
+    } else {
+      list.unshift(finalCreative);
+    }
+    saveLocal(KEYS.CREATIVES, list);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("creative_performance", activeId), finalCreative);
+        await withWriteTimeout(setDoc(getDocRef("creative_performance", activeId), finalCreative), `creative_performance/${activeId}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `creative_performance/${activeId}`);
+        console.warn("[FIREBASE] saveCreative Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<CreativeAsset>(KEYS.CREATIVES, INITIAL_CREATIVES);
-      const idx = list.findIndex((c) => c.id === creative.id);
-      if (idx !== -1) {
-        list[idx] = finalCreative;
-      } else {
-        list.unshift(finalCreative);
-      }
-      saveLocal(KEYS.CREATIVES, list);
     }
     return finalCreative;
   },
 
   async deleteCreative(id: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<CreativeAsset>(KEYS.CREATIVES, INITIAL_CREATIVES);
+    const filtered = list.filter((c) => c.id !== id);
+    saveLocal(KEYS.CREATIVES, filtered);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("creative_performance", id));
-        return true;
+        await withWriteTimeout(deleteDoc(getDocRef("creative_performance", id)), `creative_performance/${id}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `creative_performance/${id}`);
+        console.warn("[FIREBASE] deleteCreative Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<CreativeAsset>(KEYS.CREATIVES, INITIAL_CREATIVES);
-      const filtered = list.filter((c) => c.id !== id);
-      saveLocal(KEYS.CREATIVES, filtered);
-      return true;
     }
-    return false;
+    return true;
   },
 
   // --- Campaign Reports ---
@@ -1246,40 +1260,42 @@ export const dataService = {
       createdAt: row.createdAt || new Date().toISOString(),
     };
 
+    // 1. Local Cache
+    const list = loadLocal<TargetBudgetRow>(KEYS.TARGET_BUDGETS, INITIAL_TARGET_BUDGETS);
+    const idx = list.findIndex((t) => t.id === row.id);
+    if (idx !== -1) {
+      list[idx] = finalRow;
+    } else {
+      list.unshift(finalRow);
+    }
+    saveLocal(KEYS.TARGET_BUDGETS, list);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("target_budgets", activeId), finalRow);
+        await withWriteTimeout(setDoc(getDocRef("target_budgets", activeId), finalRow), `target_budgets/${activeId}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `target_budgets/${activeId}`);
+        console.warn("[FIREBASE] saveTargetBudget Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<TargetBudgetRow>(KEYS.TARGET_BUDGETS, INITIAL_TARGET_BUDGETS);
-      const idx = list.findIndex((t) => t.id === row.id);
-      if (idx !== -1) {
-        list[idx] = finalRow;
-      } else {
-        list.unshift(finalRow);
-      }
-      saveLocal(KEYS.TARGET_BUDGETS, list);
     }
     return finalRow;
   },
 
   async deleteTargetBudget(id: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<TargetBudgetRow>(KEYS.TARGET_BUDGETS, INITIAL_TARGET_BUDGETS);
+    const filtered = list.filter((t) => t.id !== id);
+    saveLocal(KEYS.TARGET_BUDGETS, filtered);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("target_budgets", id));
-        return true;
+        await withWriteTimeout(deleteDoc(getDocRef("target_budgets", id)), `target_budgets/${id}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `target_budgets/${id}`);
+        console.warn("[FIREBASE] deleteTargetBudget Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<TargetBudgetRow>(KEYS.TARGET_BUDGETS, INITIAL_TARGET_BUDGETS);
-      const filtered = list.filter((t) => t.id !== id);
-      saveLocal(KEYS.TARGET_BUDGETS, filtered);
-      return true;
     }
-    return false;
+    return true;
   },
 
   // --- Rule Settings ---
@@ -1359,40 +1375,43 @@ export const dataService = {
       id: activeId,
       createdAt: perf.createdAt || new Date().toISOString(),
     };
+
+    // 1. Local Cache
+    const list = loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS);
+    const idx = list.findIndex((c) => c.id === perf.id);
+    if (idx !== -1) {
+      list[idx] = finalPerf;
+    } else {
+      list.unshift(finalPerf);
+    }
+    saveLocal(KEYS.PERF_TRACKERS, list);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("campaign_performances", activeId), finalPerf);
+        await withWriteTimeout(setDoc(getDocRef("campaign_performances", activeId), finalPerf), `campaign_performances/${activeId}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `campaign_performances/${activeId}`);
+        console.warn("[FIREBASE] saveCampaignPerformance Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS);
-      const idx = list.findIndex((c) => c.id === perf.id);
-      if (idx !== -1) {
-        list[idx] = finalPerf;
-      } else {
-        list.unshift(finalPerf);
-      }
-      saveLocal(KEYS.PERF_TRACKERS, list);
     }
     return finalPerf;
   },
 
   async deleteCampaignPerformance(id: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS);
+    const filtered = list.filter((c) => c.id !== id);
+    saveLocal(KEYS.PERF_TRACKERS, filtered);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("campaign_performances", id));
-        return true;
+        await withWriteTimeout(deleteDoc(getDocRef("campaign_performances", id)), `campaign_performances/${id}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `campaign_performances/${id}`);
+        console.warn("[FIREBASE] deleteCampaignPerformance Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS);
-      const filtered = list.filter((c) => c.id !== id);
-      saveLocal(KEYS.PERF_TRACKERS, filtered);
-      return true;
     }
-    return false;
+    return true;
   },
 
   async getInvites(): Promise<Invite[]> {
@@ -1405,14 +1424,22 @@ export const dataService = {
           snapshot.forEach((docRef) => {
             results.push({ id: docRef.id, ...docRef.data() } as Invite);
           });
+          
+          if (results.length === 0) {
+            console.log("[FIREBASE] Seed root administrator credentials...");
+            for (const inv of INITIAL_INVITES) {
+              await setDoc(getDocRef("invites", inv.id), inv);
+            }
+            return INITIAL_INVITES;
+          }
           return results;
         })();
-        return await withTimeout(fetchPromise, loadLocal<Invite>(KEYS.INVITES, []));
+        return await withTimeout(fetchPromise, loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES));
       } catch (err) {
         console.error("Firestore getInvites error, continuing with local fallback:", err);
       }
     }
-    return loadLocal<Invite>(KEYS.INVITES, []);
+    return loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES);
   },
 
   async saveInvite(invite: Invite): Promise<Invite> {
