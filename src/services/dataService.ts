@@ -1,4 +1,4 @@
-import { db, isFirebaseEnabled, OperationType, handleFirestoreError } from "../firebase";
+import { db, isFirebaseEnabled, OperationType, handleFirestoreError, disableFirebaseSync } from "../firebase";
 import {
   collection,
   getDocs,
@@ -10,7 +10,7 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
-import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, CampaignPerformance } from "../types";
+import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, CampaignPerformance, Invite } from "../types";
 
 // Key definitions for LocalStorage fallback
 const KEYS = {
@@ -25,6 +25,7 @@ const KEYS = {
   TARGET_BUDGETS: "marketing_copilot_target_budgets",
   RULE_SETTINGS: "marketing_copilot_rule_settings",
   PERF_TRACKERS: "marketing_copilot_perf_trackers",
+  INVITES: "marketing_copilot_invites",
 };
 
 // Seamless visual placeholders for creative graphics
@@ -532,27 +533,52 @@ function saveLocal<T>(key: string, data: T[]) {
   }
 }
 
+const FIRESTORE_TIMEOUT_MS = 1500;
+
+async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  let timer: any;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[FIREBASE] Request timed out. Disabling Firebase sync to let the app load securely via Local Sandbox.`);
+      disableFirebaseSync();
+      resolve(fallback);
+    }, FIRESTORE_TIMEOUT_MS);
+  });
+
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    clearTimeout(timer);
+    return result;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 // Exported Data Service Coordinating both Local and Cloud Database Engines
 export const dataService = {
   // --- Campaigns ---
   async getCampaigns(): Promise<Campaign[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "campaigns"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Campaign));
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "campaigns"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Campaign));
 
-        // Seed cloud DB once if empty
-        if (list.length === 0) {
-          console.log("[FIREBASE] Campaign collection empty. Seeding defaults...");
-          for (const camp of INITIAL_CAMPAIGNS) {
-            await setDoc(doc(db, "campaigns", camp.id), camp);
+          // Seed cloud DB once if empty
+          if (list.length === 0) {
+            console.log("[FIREBASE] Campaign collection empty. Seeding defaults...");
+            for (const camp of INITIAL_CAMPAIGNS) {
+              await setDoc(doc(db, "campaigns", camp.id), camp);
+            }
+            return INITIAL_CAMPAIGNS;
           }
-          return INITIAL_CAMPAIGNS;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "campaigns");
+        console.error("Firestore getCampaigns error, continuing with local fallback:", err);
       }
     }
     return loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS);
@@ -679,20 +705,23 @@ export const dataService = {
   async getAuditLogs(): Promise<AuditLog[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as AuditLog));
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as AuditLog));
 
-        if (list.length === 0) {
-          console.log("[FIREBASE] Seed audit trail logs...");
-          for (const l of INITIAL_AUDITS) {
-            await setDoc(doc(db, "audit_logs", l.id), l);
+          if (list.length === 0) {
+            console.log("[FIREBASE] Seed audit trail logs...");
+            for (const l of INITIAL_AUDITS) {
+              await setDoc(doc(db, "audit_logs", l.id), l);
+            }
+            return INITIAL_AUDITS;
           }
-          return INITIAL_AUDITS;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<AuditLog>(KEYS.AUDIT_LOGS, INITIAL_AUDITS));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "audit_logs");
+        console.error("Firestore getAuditLogs error, continuing with local fallback:", err);
       }
     }
     return loadLocal<AuditLog>(KEYS.AUDIT_LOGS, INITIAL_AUDITS);
@@ -723,20 +752,23 @@ export const dataService = {
   async getLeads(): Promise<Lead[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "portal_leads"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Lead));
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "portal_leads"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Lead));
 
-        if (list.length === 0) {
-          console.log("[FIREBASE] Seed lead portal records...");
-          for (const l of INITIAL_LEADS) {
-            await setDoc(doc(db, "portal_leads", l.id), l);
+          if (list.length === 0) {
+            console.log("[FIREBASE] Seed lead portal records...");
+            for (const l of INITIAL_LEADS) {
+              await setDoc(doc(db, "portal_leads", l.id), l);
+            }
+            return INITIAL_LEADS;
           }
-          return INITIAL_LEADS;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<Lead>(KEYS.PORTAL_LEADS, INITIAL_LEADS));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "portal_leads");
+        console.error("Firestore getLeads error, continuing with local fallback:", err);
       }
     }
     return loadLocal<Lead>(KEYS.PORTAL_LEADS, INITIAL_LEADS);
@@ -791,20 +823,23 @@ export const dataService = {
   async getCreatives(): Promise<CreativeAsset[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "creative_performance"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CreativeAsset));
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "creative_performance"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CreativeAsset));
 
-        if (list.length === 0) {
-          console.log("[FIREBASE] Seed creative collection files...");
-          for (const c of INITIAL_CREATIVES) {
-            await setDoc(doc(db, "creative_performance", c.id), c);
+          if (list.length === 0) {
+            console.log("[FIREBASE] Seed creative collection files...");
+            for (const c of INITIAL_CREATIVES) {
+              await setDoc(doc(db, "creative_performance", c.id), c);
+            }
+            return INITIAL_CREATIVES;
           }
-          return INITIAL_CREATIVES;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<CreativeAsset>(KEYS.CREATIVES, INITIAL_CREATIVES));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "creative_performance");
+        console.error("Firestore getCreatives error, continuing with local fallback:", err);
       }
     }
     return loadLocal<CreativeAsset>(KEYS.CREATIVES, INITIAL_CREATIVES);
@@ -859,19 +894,22 @@ export const dataService = {
   async getCampaignReports(): Promise<CampaignReport[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "campaign_reports"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CampaignReport));
-        if (list.length === 0) {
-          console.log("[FIREBASE] Seed campaign reports...");
-          for (const rep of INITIAL_REPORTS) {
-            await setDoc(doc(db, "campaign_reports", rep.id), rep);
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "campaign_reports"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CampaignReport));
+          if (list.length === 0) {
+            console.log("[FIREBASE] Seed campaign reports...");
+            for (const rep of INITIAL_REPORTS) {
+              await setDoc(doc(db, "campaign_reports", rep.id), rep);
+            }
+            return INITIAL_REPORTS;
           }
-          return INITIAL_REPORTS;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<CampaignReport>(KEYS.REPORTS, INITIAL_REPORTS));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "campaign_reports");
+        console.error("Firestore getCampaignReports error, continuing with local fallback:", err);
       }
     }
     return loadLocal<CampaignReport>(KEYS.REPORTS, INITIAL_REPORTS);
@@ -925,19 +963,22 @@ export const dataService = {
   async getMetricComparisons(): Promise<MetricComparison[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "metric_comparisons"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as MetricComparison));
-        if (list.length === 0) {
-          console.log("[FIREBASE] Seed metric comparisons...");
-          for (const comp of INITIAL_COMPARISONS) {
-            await setDoc(doc(db, "metric_comparisons", comp.id), comp);
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "metric_comparisons"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as MetricComparison));
+          if (list.length === 0) {
+            console.log("[FIREBASE] Seed metric comparisons...");
+            for (const comp of INITIAL_COMPARISONS) {
+              await setDoc(doc(db, "metric_comparisons", comp.id), comp);
+            }
+            return INITIAL_COMPARISONS;
           }
-          return INITIAL_COMPARISONS;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<MetricComparison>(KEYS.COMPARISONS, INITIAL_COMPARISONS));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "metric_comparisons");
+        console.error("Firestore getMetricComparisons error, continuing with local fallback:", err);
       }
     }
     return loadLocal<MetricComparison>(KEYS.COMPARISONS, INITIAL_COMPARISONS);
@@ -991,19 +1032,22 @@ export const dataService = {
   async getChangeLogEntries(): Promise<ChangeLogEntry[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "change_log_entries"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ChangeLogEntry));
-        if (list.length === 0) {
-          console.log("[FIREBASE] Seed change log entries...");
-          for (const chg of INITIAL_CHANGE_LOG_ENTRIES) {
-            await setDoc(doc(db, "change_log_entries", chg.id), chg);
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "change_log_entries"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ChangeLogEntry));
+          if (list.length === 0) {
+            console.log("[FIREBASE] Seed change log entries...");
+            for (const chg of INITIAL_CHANGE_LOG_ENTRIES) {
+              await setDoc(doc(db, "change_log_entries", chg.id), chg);
+            }
+            return INITIAL_CHANGE_LOG_ENTRIES;
           }
-          return INITIAL_CHANGE_LOG_ENTRIES;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<ChangeLogEntry>(KEYS.CHANGE_LOGS, INITIAL_CHANGE_LOG_ENTRIES));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "change_log_entries");
+        console.error("Firestore getChangeLogEntries error, continuing with local fallback:", err);
       }
     }
     return loadLocal<ChangeLogEntry>(KEYS.CHANGE_LOGS, INITIAL_CHANGE_LOG_ENTRIES);
@@ -1057,19 +1101,22 @@ export const dataService = {
   async getPortalReports(): Promise<PortalReportRow[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "portal_reports"), orderBy("date", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as PortalReportRow));
-        if (list.length === 0) {
-          console.log("[FIREBASE] Seeding initial portal reports...");
-          for (const r of INITIAL_PORTAL_REPORTS) {
-            await setDoc(doc(db, "portal_reports", r.id), r);
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "portal_reports"), orderBy("date", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as PortalReportRow));
+          if (list.length === 0) {
+            console.log("[FIREBASE] Seeding initial portal reports...");
+            for (const r of INITIAL_PORTAL_REPORTS) {
+              await setDoc(doc(db, "portal_reports", r.id), r);
+            }
+            return INITIAL_PORTAL_REPORTS;
           }
-          return INITIAL_PORTAL_REPORTS;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "portal_reports");
+        console.error("Firestore getPortalReports error, continuing with local fallback:", err);
       }
     }
     return loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS);
@@ -1124,19 +1171,22 @@ export const dataService = {
   async getTargetBudgets(): Promise<TargetBudgetRow[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "target_budgets"), orderBy("month", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as TargetBudgetRow));
-        if (list.length === 0) {
-          console.log("[FIREBASE] Seeding initial target budgets...");
-          for (const t of INITIAL_TARGET_BUDGETS) {
-            await setDoc(doc(db, "target_budgets", t.id), t);
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "target_budgets"), orderBy("month", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as TargetBudgetRow));
+          if (list.length === 0) {
+            console.log("[FIREBASE] Seeding initial target budgets...");
+            for (const t of INITIAL_TARGET_BUDGETS) {
+              await setDoc(doc(db, "target_budgets", t.id), t);
+            }
+            return INITIAL_TARGET_BUDGETS;
           }
-          return INITIAL_TARGET_BUDGETS;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<TargetBudgetRow>(KEYS.TARGET_BUDGETS, INITIAL_TARGET_BUDGETS));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "target_budgets");
+        console.error("Firestore getTargetBudgets error, continuing with local fallback:", err);
       }
     }
     return loadLocal<TargetBudgetRow>(KEYS.TARGET_BUDGETS, INITIAL_TARGET_BUDGETS);
@@ -1191,18 +1241,21 @@ export const dataService = {
   async getRuleConfiguration(): Promise<RuleConfiguration> {
     if (isFirebaseEnabled) {
       try {
-        const q = collection(db, "rule_settings");
-        const snapshot = await getDocs(q);
-        const docsList = snapshot.docs;
-        if (docsList.length === 0) {
-          console.log("[FIREBASE] Seed rule default settings...");
-          await setDoc(doc(db, "rule_settings", "global"), DEFAULT_RULE_CONFIGURATION);
-          return DEFAULT_RULE_CONFIGURATION;
-        }
-        const found = docsList.find(d => d.id === "global") || docsList[0];
-        return { id: found.id, ...found.data() } as RuleConfiguration;
+        const fetchPromise = (async () => {
+          const q = collection(db, "rule_settings");
+          const snapshot = await getDocs(q);
+          const docsList = snapshot.docs;
+          if (docsList.length === 0) {
+            console.log("[FIREBASE] Seed rule default settings...");
+            await setDoc(doc(db, "rule_settings", "global"), DEFAULT_RULE_CONFIGURATION);
+            return DEFAULT_RULE_CONFIGURATION;
+          }
+          const found = docsList.find(d => d.id === "global") || docsList[0];
+          return { id: found.id, ...found.data() } as RuleConfiguration;
+        })();
+        return await withTimeout(fetchPromise, DEFAULT_RULE_CONFIGURATION);
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "rule_settings");
+        console.error("Firestore getRuleConfiguration error, continuing with local fallback:", err);
       }
     }
     const list = loadLocal<RuleConfiguration>(KEYS.RULE_SETTINGS, [DEFAULT_RULE_CONFIGURATION]);
@@ -1232,19 +1285,22 @@ export const dataService = {
   async getCampaignPerformances(): Promise<CampaignPerformance[]> {
     if (isFirebaseEnabled) {
       try {
-        const q = query(collection(db, "campaign_performances"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CampaignPerformance));
-        if (list.length === 0) {
-          console.log("[FIREBASE] Seed campaign performances...");
-          for (const perf of INITIAL_PERF_TRACKERS) {
-            await setDoc(doc(db, "campaign_performances", perf.id), perf);
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "campaign_performances"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CampaignPerformance));
+          if (list.length === 0) {
+            console.log("[FIREBASE] Seed campaign performances...");
+            for (const perf of INITIAL_PERF_TRACKERS) {
+              await setDoc(doc(db, "campaign_performances", perf.id), perf);
+            }
+            return INITIAL_PERF_TRACKERS;
           }
-          return INITIAL_PERF_TRACKERS;
-        }
-        return list;
+          return list;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS));
       } catch (err) {
-        handleFirestoreError(err, OperationType.LIST, "campaign_performances");
+        console.error("Firestore getCampaignPerformances error, continuing with local fallback:", err);
       }
     }
     return loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS);
@@ -1289,6 +1345,70 @@ export const dataService = {
       const list = loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS);
       const filtered = list.filter((c) => c.id !== id);
       saveLocal(KEYS.PERF_TRACKERS, filtered);
+      return true;
+    }
+    return false;
+  },
+
+  async getInvites(): Promise<Invite[]> {
+    if (isFirebaseEnabled) {
+      try {
+        const fetchPromise = (async () => {
+          const q = query(collection(db, "invites"), orderBy("createdAt", "desc"));
+          const snapshot = await getDocs(q);
+          const results: Invite[] = [];
+          snapshot.forEach((docRef) => {
+            results.push({ id: docRef.id, ...docRef.data() } as Invite);
+          });
+          return results;
+        })();
+        return await withTimeout(fetchPromise, loadLocal<Invite>(KEYS.INVITES, []));
+      } catch (err) {
+        console.error("Firestore getInvites error, continuing with local fallback:", err);
+      }
+    }
+    return loadLocal<Invite>(KEYS.INVITES, []);
+  },
+
+  async saveInvite(invite: Invite): Promise<Invite> {
+    const isNew = !invite.id || invite.id.length === 0 || invite.id.startsWith("temp-");
+    const activeId = isNew ? "inv-" + Math.random().toString(36).substring(2, 9) : invite.id;
+    const finalInvite: Invite = {
+      ...invite,
+      id: activeId,
+      createdAt: invite.createdAt || new Date().toISOString(),
+    };
+    if (isFirebaseEnabled) {
+      try {
+        await setDoc(doc(db, "invites", activeId), finalInvite);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `invites/${activeId}`);
+      }
+    } else {
+      const list = loadLocal<Invite>(KEYS.INVITES, []);
+      const idx = list.findIndex((c) => c.id === invite.id);
+      if (idx !== -1) {
+        list[idx] = finalInvite;
+      } else {
+        list.unshift(finalInvite);
+      }
+      saveLocal(KEYS.INVITES, list);
+    }
+    return finalInvite;
+  },
+
+  async deleteInvite(id: string): Promise<boolean> {
+    if (isFirebaseEnabled) {
+      try {
+        await deleteDoc(doc(db, "invites", id));
+        return true;
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `invites/${id}`);
+      }
+    } else {
+      const list = loadLocal<Invite>(KEYS.INVITES, []);
+      const filtered = list.filter((c) => c.id !== id);
+      saveLocal(KEYS.INVITES, filtered);
       return true;
     }
     return false;

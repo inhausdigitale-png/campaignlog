@@ -215,7 +215,16 @@ export interface RuleConfiguration {
   updatedAt: string;
 }
 
-export type SimulatedRoleType = "Admin" | "CampaignManager" | "LeadAgent" | "Auditor";
+export type SimulatedRoleType = "Admin" | "CampaignManager" | "LeadAgent" | "Auditor" | string;
+
+export interface Invite {
+  id: string;
+  email: string;
+  role: SimulatedRoleType;
+  invitedBy: string;
+  status: "pending" | "accepted" | "declined";
+  createdAt: string;
+}
 
 export interface UserRolePermission {
   role: SimulatedRoleType;

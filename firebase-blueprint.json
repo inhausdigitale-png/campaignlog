@@ -224,6 +224,20 @@
         "creativeNewUpdatedFlag": { "type": "boolean", "description": "Indicates whether a newly updated creative is present" }
       },
       "required": ["id", "campaignName", "adsetName", "adAccountId", "projectName", "leads", "impression", "reach", "ctr", "amountSpend", "clicks", "svc", "booked", "createdAt"]
+    },
+    "invite": {
+      "title": "Invite",
+      "description": "Represents an access role invitation issued by email to dynamic team members.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique invite identifier" },
+        "email": { "type": "string", "description": "Recipient email address for simulated/real invitation" },
+        "role": { "type": "string", "description": "Assigned access role code" },
+        "invitedBy": { "type": "string", "description": "Email address of the inviting user" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when invite was created" }
+      },
+      "required": ["id", "email", "role", "invitedBy", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -270,6 +284,10 @@
     "campaign_performances": {
       "schema": "campaignPerformance",
       "description": "Fine-grained multi-metric tracking records for ad platforms."
+    },
+    "invites": {
+      "schema": "invite",
+      "description": "Team role email invitations log."
     }
   }
 }

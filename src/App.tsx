@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, SimulatedRoleType, CampaignPerformance } from "./types";
+import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, SimulatedRoleType, CampaignPerformance, UserRolePermission, Invite } from "./types";
 import { dataService } from "./services/dataService";
-import { isFirebaseEnabled, auth } from "./firebase";
+import { isFirebaseEnabled, isFirebaseConfigured, auth } from "./firebase";
 import { signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 import { ROLE_PERMISSIONS } from "./utils/indiaHelpers";
 import Dashboard from "./components/Dashboard";
@@ -16,6 +16,8 @@ import DownloadReportsHub from "./components/DownloadReportsHub";
 import OnboardingGuide from "./components/OnboardingGuide";
 import AIHub from "./components/AIHub";
 import GoogleSheetsSync from "./components/GoogleSheetsSync";
+import UserRolesSettings from "./components/UserRolesSettings";
+import LoginPage from "./components/LoginPage";
 import {
   Sparkles,
   LayoutDashboard,
@@ -42,20 +44,50 @@ import {
 
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles">("dashboard");
 
-  // Simulated Roles & Permissions state
+  // Custom/Simulated Roles & Permissions state
+  const [rolePermissions, setRolePermissions] = useState<Record<string, UserRolePermission>>(() => {
+    const saved = localStorage.getItem("custom_role_permissions");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse custom role permissions", e);
+      }
+    }
+    return ROLE_PERMISSIONS;
+  });
+
   const [userRole, setUserRole] = useState<SimulatedRoleType>(() => {
     const saved = localStorage.getItem("simulated_user_role");
     return (saved as SimulatedRoleType) || "Admin";
   });
-  const [bypassSecurity, setBypassSecurity] = useState<boolean>(true);
+
+  const [bypassSecurity, setBypassSecurity] = useState<boolean>(() => {
+    const saved = localStorage.getItem("simulated_bypass_security");
+    // Default system bypass security checks to false to prevent active sandbox bypass indicators by default
+    return saved === "true";
+  });
 
   useEffect(() => {
     localStorage.setItem("simulated_user_role", userRole);
   }, [userRole]);
 
-  const rawRolePermission = ROLE_PERMISSIONS[userRole] || ROLE_PERMISSIONS.Admin;
+  const handleSaveRolePermissions = (newPermissions: Record<string, UserRolePermission>) => {
+    setRolePermissions(newPermissions);
+    localStorage.setItem("custom_role_permissions", JSON.stringify(newPermissions));
+  };
+
+  const handleToggleBypassSecurity = () => {
+    setBypassSecurity(prev => {
+      const next = !prev;
+      localStorage.setItem("simulated_bypass_security", String(next));
+      return next;
+    });
+  };
+
+  const rawRolePermission = rolePermissions[userRole] || rolePermissions.Admin || ROLE_PERMISSIONS.Admin;
   const currentRolePermission = bypassSecurity
     ? {
         role: rawRolePermission.role,
@@ -88,17 +120,28 @@ export default function App() {
   const [ruleSetting, setRuleSetting] = useState<RuleConfiguration | null>(null);
   const [campaignPerformances, setCampaignPerformances] = useState<CampaignPerformance[]>([]);
   const [portalSubTab, setPortalSubTab] = useState<"pivot" | "database">("pivot");
+  const [invites, setInvites] = useState<Invite[]>([]);
 
   // Auth States
-  const [user, setUser] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState<boolean>(isFirebaseEnabled);
+  const [user, setUser] = useState<any>(() => {
+    const saved = localStorage.getItem("authenticated_guest_user");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+  const [authLoading, setAuthLoading] = useState<boolean>(isFirebaseConfigured);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Load database snapshots
   const loadAllDatabaseStates = async () => {
     try {
       setLoading(true);
-      const [cRes, aRes, lRes, crRes, rRes, comRes, chgRes, pRes, tRes, sRes, perfRes] = await Promise.all([
+      const [cRes, aRes, lRes, crRes, rRes, comRes, chgRes, pRes, tRes, sRes, perfRes, invRes] = await Promise.all([
         dataService.getCampaigns(),
         dataService.getAuditLogs(),
         dataService.getLeads(),
@@ -110,6 +153,7 @@ export default function App() {
         dataService.getTargetBudgets(),
         dataService.getRuleConfiguration(),
         dataService.getCampaignPerformances(),
+        dataService.getInvites(),
       ]);
 
       setCampaigns(cRes || []);
@@ -123,6 +167,7 @@ export default function App() {
       setTargetBudgets(tRes || []);
       setRuleSetting(sRes || null);
       setCampaignPerformances(perfRes || []);
+      setInvites(invRes || []);
     } catch (err) {
       console.error("Failed to load records state:", err);
     } finally {
@@ -132,36 +177,52 @@ export default function App() {
 
   useEffect(() => {
     let authTimeout: any;
-    if (!isFirebaseEnabled) {
+    if (!isFirebaseConfigured) {
       loadAllDatabaseStates();
     } else if (auth) {
-      // Robust fail-safe timeout (e.g. for iframe cookie restriction/hang issues)
+      // Robust responsive fail-safe timeout for sandbox iframe iframe cookie blocks
       authTimeout = setTimeout(() => {
-        console.warn("[AUTH] State resolution took too long. Activating local workspace sandbox mode safety fallback.");
+        console.warn("[AUTH] State resolution took too long. Initializing workspace directly in Sandbox mode.");
         setAuthLoading(false);
         loadAllDatabaseStates();
-      }, 4500);
+      }, 1500);
 
       const unsubscribe = auth.onAuthStateChanged((currUser: any) => {
         if (authTimeout) clearTimeout(authTimeout);
-        setUser(currUser);
-        setAuthLoading(false);
         if (currUser) {
-          loadAllDatabaseStates();
+          setUser(currUser);
+          // Auto promotion check on real sign in too!
+          if (currUser.email) {
+            const emailLower = currUser.email.toLowerCase();
+            dataService.getInvites().then((activeInv) => {
+              const pendingInvite = activeInv.find(inv => inv.email.toLowerCase() === emailLower && inv.status === "pending");
+              if (pendingInvite) {
+                setUserRole(pendingInvite.role);
+                localStorage.setItem("simulated_user_role", pendingInvite.role);
+                
+                // Set accepted
+                dataService.saveInvite({
+                  ...pendingInvite,
+                  status: "accepted" as const,
+                });
+              }
+            });
+          }
         } else {
-          setCampaigns([]);
-          setAuditLogs([]);
-          setLeads([]);
-          setCreatives([]);
-          setCampaignReports([]);
-          setMetricComparisons([]);
-          setChangeLogEntries([]);
-          setPortalReports([]);
-          setTargetBudgets([]);
-          setRuleSetting(null);
-          setCampaignPerformances([]);
-          setLoading(false);
+          // If no Google auth user, fallback to guest user saved in local storage if any
+          const savedGuest = localStorage.getItem("authenticated_guest_user");
+          if (savedGuest) {
+            try {
+              setUser(JSON.parse(savedGuest));
+            } catch (e) {
+              setUser(null);
+            }
+          } else {
+            setUser(null);
+          }
         }
+        setAuthLoading(false);
+        loadAllDatabaseStates();
       });
       
       return () => {
@@ -178,6 +239,92 @@ export default function App() {
 
   const handleDeleteCampaignPerformance = async (id: string) => {
     await dataService.deleteCampaignPerformance(id);
+    await loadAllDatabaseStates();
+  };
+
+  const handleAddInvite = async (email: string, roleToInvite: string) => {
+    const newInvite: Invite = {
+      id: "inv-" + Math.random().toString(36).substring(2, 9),
+      email: email.trim().toLowerCase(),
+      role: roleToInvite as any,
+      invitedBy: user?.email || "anonymous_sandbox_admin",
+      status: "pending",
+      createdAt: new Date().toISOString()
+    };
+    await dataService.saveInvite(newInvite);
+    await loadAllDatabaseStates();
+  };
+
+  const handleDeleteInvite = async (id: string) => {
+    await dataService.deleteInvite(id);
+    await loadAllDatabaseStates();
+  };
+
+  const handleGoogleSignIn = async () => {
+    if (!auth) return;
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const googleUser = result.user;
+      
+      if (googleUser && googleUser.email) {
+        const emailLower = googleUser.email.toLowerCase();
+        const activeInvites = await dataService.getInvites();
+        const pendingInvite = activeInvites.find(inv => inv.email.toLowerCase() === emailLower && inv.status === "pending");
+        if (pendingInvite) {
+          setUserRole(pendingInvite.role);
+          localStorage.setItem("simulated_user_role", pendingInvite.role);
+          
+          await dataService.saveInvite({
+            ...pendingInvite,
+            status: "accepted" as const,
+          });
+        }
+      }
+      
+      setUser(googleUser);
+      localStorage.removeItem("authenticated_guest_user");
+      await loadAllDatabaseStates();
+    } catch (err) {
+      console.error("Google login failed:", err);
+    }
+  };
+
+  const handleGuestSignIn = async (email: string, selectedRole: SimulatedRoleType) => {
+    const emailLower = email.toLowerCase();
+    const pendingInvite = invites.find(inv => inv.email.toLowerCase() === emailLower && inv.status === "pending");
+    
+    let roleToSet = selectedRole;
+    if (pendingInvite) {
+      roleToSet = pendingInvite.role;
+      await dataService.saveInvite({
+        ...pendingInvite,
+        status: "accepted" as const,
+      });
+    }
+    
+    const guestUser = {
+      displayName: email.split("@")[0],
+      email: email,
+      photoURL: null,
+      isGuest: true,
+      providerId: "simulated-provider"
+    };
+    
+    setUser(guestUser);
+    setUserRole(roleToSet);
+    localStorage.setItem("authenticated_guest_user", JSON.stringify(guestUser));
+    localStorage.setItem("simulated_user_role", roleToSet);
+    
+    await loadAllDatabaseStates();
+  };
+
+  const handleSignOut = async () => {
+    if (auth && !user?.isGuest) {
+      await signOut(auth);
+    }
+    setUser(null);
+    localStorage.removeItem("authenticated_guest_user");
     await loadAllDatabaseStates();
   };
 
@@ -318,26 +465,6 @@ export default function App() {
     await loadAllDatabaseStates();
   };
 
-  // Authenticators
-  const handleGoogleSignIn = async () => {
-    if (!isFirebaseEnabled || !auth) return;
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Google Popup Auth failed:", error);
-    }
-  };
-
-  const handleSignOut = async () => {
-    if (!isFirebaseEnabled || !auth) return;
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error("Sign out failed:", error);
-    }
-  };
-
   const mappedPerformanceCampaigns: Campaign[] = (campaignPerformances || [])
     .filter(perf => perf && perf.campaignName)
     .map((perf) => {
@@ -371,6 +498,18 @@ export default function App() {
     });
   const mergedCampaigns = [...campaigns, ...mappedPerformanceCampaigns];
 
+  if (!user) {
+    return (
+      <LoginPage
+        onGoogleSignIn={handleGoogleSignIn}
+        onGuestSignIn={handleGuestSignIn}
+        isFirebaseConfigured={isFirebaseConfigured}
+        isFirebaseEnabled={isFirebaseEnabled}
+        invites={invites}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900">
       {/* Upper Navigation & Status Banner Bar */}
@@ -393,27 +532,28 @@ export default function App() {
           {/* Database Mode status + Google authentication block */}
           <div className="flex items-center gap-3.5">
             {/* Highly Polished Simulated Role Selection dropdown */}
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 flex-shrink-0">
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 flex-shrink-0 font-sans">
               <Shield size={14} className="text-indigo-600 animate-pulse shrink-0" />
               <div className="flex flex-col text-left">
-                <span className="text-[7.5px] font-bold text-slate-400 uppercase tracking-widest leading-none">Security Role</span>
+                <span className="text-[7.5px] font-bold text-slate-400 uppercase tracking-widest leading-none font-sans">Security Role</span>
                 <select
                   value={userRole}
                   onChange={(e) => setUserRole(e.target.value as SimulatedRoleType)}
-                  className="bg-transparent text-[11px] font-bold text-slate-700 focus:outline-none cursor-pointer pr-1 py-0.5 leading-tight"
+                  className="bg-transparent text-[11px] font-bold text-slate-700 focus:outline-none cursor-pointer pr-1 py-0.5 leading-tight font-sans"
                 >
-                  <option value="Admin">🛡️ Super Admin</option>
-                  <option value="CampaignManager">📣 Campaign Manager</option>
-                  <option value="LeadAgent">👥 Sales Lead Agent</option>
-                  <option value="Auditor">👁️ View-Only Auditor</option>
+                  {Object.keys(rolePermissions).map((rk) => (
+                    <option value={rk} key={rk}>
+                      {rolePermissions[rk].label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
 
             {/* Security Bypass Button for Testing */}
             <button
-              onClick={() => setBypassSecurity(prev => !prev)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none ${
+              onClick={handleToggleBypassSecurity}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none font-sans ${
                 bypassSecurity
                   ? "bg-amber-50 text-amber-700 border-amber-200 hover:bg-[#FEF3C7]"
                   : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
@@ -424,15 +564,15 @@ export default function App() {
               <span>{bypassSecurity ? "Bypass: Active" : "Bypass: Inactive"}</span>
             </button>
 
-            {isFirebaseEnabled ? (
-              <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
-                <CloudCheck size={12} className="text-indigo-600" />
-                <span>Cloud Firestore Active</span>
+            {isFirebaseEnabled && user ? (
+              <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-emerald-750 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                <CloudCheck size={12} className="text-emerald-500 animate-pulse" />
+                <span>Cloud Sync Connected</span>
               </div>
             ) : (
-              <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+              <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
                 <Database size={11} className="text-amber-500" />
-                <span>Sandbox Mode (LocalStorage)</span>
+                <span>Sandbox Mode (Offline Local)</span>
               </div>
             )}
 
@@ -540,19 +680,6 @@ export default function App() {
                 <span>AI</span>
               </button>
 
-              {/* Google Sheets Sync btn */}
-              <button
-                onClick={() => setActiveTab("sheets")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
-                  activeTab === "sheets"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <FileSpreadsheet size={16} />
-                <span>Google Sheets Sync</span>
-              </button>
-
               {/* Portal Leads btn */}
               <button
                 onClick={() => setActiveTab("portals")}
@@ -577,6 +704,19 @@ export default function App() {
               >
                 <HardDriveDownload size={16} />
                 <span>Download Reports</span>
+              </button>
+
+              {/* Google Sheets Sync btn */}
+              <button
+                onClick={() => setActiveTab("sheets_sync")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                  activeTab === "sheets_sync"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <FileSpreadsheet size={16} />
+                <span>Google Sheets Sync</span>
               </button>
 
               {/* Campaign Upload & Change Log btn */}
@@ -616,6 +756,20 @@ export default function App() {
               >
                 <Sliders size={16} />
                 <span>Rule Configuration</span>
+              </button>
+
+              {/* User Roles Configuration btn */}
+              <button
+                id="sidebar_roles_btn"
+                onClick={() => setActiveTab("roles")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                  activeTab === "roles"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <Shield size={16} />
+                <span>User Roles Settings</span>
               </button>
             </nav>
           </div>
@@ -685,28 +839,6 @@ export default function App() {
               </svg>
               <p className="text-xs font-semibold font-display text-slate-600">Reticulating database connections...</p>
             </div>
-          ) : isFirebaseEnabled && !user ? (
-            <div className="max-w-md mx-auto my-12 p-8 bg-white border border-slate-200 rounded-2xl shadow-xs text-center space-y-6 animate-fade-in">
-              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto border border-indigo-100">
-                <ShieldAlert size={24} />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold font-display text-slate-900 tracking-tight">Cloud Workspace Locked</h2>
-                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                  Campaign Intelligence tracking and log chronicles require secure Google authentication to view and synchronize team data.
-                </p>
-              </div>
-              <button
-                onClick={handleGoogleSignIn}
-                className="w-full h-11 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs px-4 rounded-xl shadow-xs transition-all cursor-pointer font-display"
-              >
-                <LogIn size={14} />
-                <span>Sign in with Google</span>
-              </button>
-              <div className="text-[10px] text-slate-400 font-medium">
-                Uses Firebase Authentication with verified tenant access policies
-              </div>
-            </div>
           ) : (
             <div className="animate-fade-in space-y-6">
               <OnboardingGuide onNavigate={setActiveTab} />
@@ -745,15 +877,6 @@ export default function App() {
                   creatives={creatives}
                   campaigns={mergedCampaigns}
                   onSaveCreative={handleSaveCreative}
-                  onSaveChangeLog={handleSaveChangeLogEntry}
-                />
-              )}
-              {activeTab === "sheets" && (
-                <GoogleSheetsSync
-                  campaigns={mergedCampaigns}
-                  onImportLeads={handleImportLeads}
-                  onImportPerformance={handleImportPerformance}
-                  onImportTargets={handleImportTargets}
                   onSaveChangeLog={handleSaveChangeLogEntry}
                 />
               )}
@@ -839,6 +962,28 @@ export default function App() {
                   changeLogs={changeLogEntries}
                   onSaveChangeLog={handleSaveChangeLogEntry}
                   onDeleteChangeLog={handleDeleteChangeLogEntry}
+                />
+              )}
+              {activeTab === "sheets_sync" && (
+                <GoogleSheetsSync
+                  campaigns={mergedCampaigns}
+                  onImportLeads={handleImportLeads}
+                  onImportPerformance={handleImportPerformance}
+                  onImportTargets={handleImportTargets}
+                />
+              )}
+              {activeTab === "roles" && (
+                <UserRolesSettings
+                  rolePermissions={rolePermissions}
+                  onSaveRolePermissions={handleSaveRolePermissions}
+                  userRole={userRole}
+                  onSetUserRole={setUserRole}
+                  bypassSecurity={bypassSecurity}
+                  onToggleBypassSecurity={handleToggleBypassSecurity}
+                  invites={invites}
+                  onAddInvite={handleAddInvite}
+                  onDeleteInvite={handleDeleteInvite}
+                  currentUserEmail={user?.email || "anonymous_sandbox_admin"}
                 />
               )}
             </div>
