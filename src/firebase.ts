@@ -7,14 +7,10 @@ let app;
 let db: any = null;
 let auth: any = null;
 let isFirebaseEnabled = false;
-let isFirebaseConfigured = false;
 let isCloudSyncActive = false;
-
-const isForceSandbox = typeof window !== "undefined" && window.localStorage.getItem("force_sandbox_mode") === "true";
 
 // Determine if the config is realistic or just placeholder
 if (
-  !isForceSandbox &&
   firebaseConfig &&
   firebaseConfig.apiKey &&
   !firebaseConfig.apiKey.includes("placeholder") &&
@@ -29,14 +25,13 @@ if (
       db = getFirestore(app);
     }
     auth = getAuth(app);
-    isFirebaseConfigured = true;
+    isFirebaseEnabled = true;
     console.log("[FIREBASE] Initialized successfully with Cloud Firestore.");
 
     // Track active signed-in session dynamically
     onAuthStateChanged(auth, (usr) => {
       isCloudSyncActive = usr !== null;
-      isFirebaseEnabled = usr !== null; // Dynamically enable sync only when user is logged in
-      console.log(`[FIREBASE] Live sync state updated. Active: ${isCloudSyncActive}, isFirebaseEnabled: ${isFirebaseEnabled}`);
+      console.log(`[FIREBASE] Live sync state updated. Active: ${isCloudSyncActive}`);
     });
   } catch (error) {
     console.error("[FIREBASE] Initialization error, falling back to local sandbox:", error);
@@ -45,13 +40,7 @@ if (
   console.log("[FIREBASE] Configuration is placeholder. Running on durable Sandbox LocalStorage mode.");
 }
 
-export function disableFirebaseSync() {
-  console.warn("[FIREBASE] Firebase connection bypassed dynamically due to timeout or network block.");
-  isFirebaseEnabled = false;
-  isCloudSyncActive = false;
-}
-
-export { db, auth, isFirebaseEnabled, isFirebaseConfigured, isCloudSyncActive };
+export { db, auth, isFirebaseEnabled, isCloudSyncActive };
 
 // Standardized Firestore Error Logger
 export enum OperationType {

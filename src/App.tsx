@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, SimulatedRoleType, CampaignPerformance } from "./types";
 import { dataService } from "./services/dataService";
-import { isFirebaseEnabled, isFirebaseConfigured, auth } from "./firebase";
+import { isFirebaseEnabled, auth } from "./firebase";
 import { signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 import { ROLE_PERMISSIONS } from "./utils/indiaHelpers";
 import Dashboard from "./components/Dashboard";
@@ -42,7 +42,7 @@ import {
 
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets">("dashboard");
 
   // Simulated Roles & Permissions state
   const [userRole, setUserRole] = useState<SimulatedRoleType>(() => {
@@ -91,7 +91,7 @@ export default function App() {
 
   // Auth States
   const [user, setUser] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState<boolean>(isFirebaseConfigured);
+  const [authLoading, setAuthLoading] = useState<boolean>(isFirebaseEnabled);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Load database snapshots
@@ -132,22 +132,36 @@ export default function App() {
 
   useEffect(() => {
     let authTimeout: any;
-    if (!isFirebaseConfigured) {
+    if (!isFirebaseEnabled) {
       loadAllDatabaseStates();
     } else if (auth) {
-      // Robust responsive fail-safe timeout for sandbox iframe iframe cookie blocks
+      // Robust fail-safe timeout (e.g. for iframe cookie restriction/hang issues)
       authTimeout = setTimeout(() => {
-        console.warn("[AUTH] State resolution took too long. Initializing workspace directly in Sandbox mode.");
+        console.warn("[AUTH] State resolution took too long. Activating local workspace sandbox mode safety fallback.");
         setAuthLoading(false);
         loadAllDatabaseStates();
-      }, 1500);
+      }, 4500);
 
       const unsubscribe = auth.onAuthStateChanged((currUser: any) => {
         if (authTimeout) clearTimeout(authTimeout);
         setUser(currUser);
         setAuthLoading(false);
-        // Load whatever state is active dynamically (Cloud if user is active, Local Sandbox if null)
-        loadAllDatabaseStates();
+        if (currUser) {
+          loadAllDatabaseStates();
+        } else {
+          setCampaigns([]);
+          setAuditLogs([]);
+          setLeads([]);
+          setCreatives([]);
+          setCampaignReports([]);
+          setMetricComparisons([]);
+          setChangeLogEntries([]);
+          setPortalReports([]);
+          setTargetBudgets([]);
+          setRuleSetting(null);
+          setCampaignPerformances([]);
+          setLoading(false);
+        }
       });
       
       return () => {
@@ -410,15 +424,15 @@ export default function App() {
               <span>{bypassSecurity ? "Bypass: Active" : "Bypass: Inactive"}</span>
             </button>
 
-            {isFirebaseEnabled && user ? (
-              <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-emerald-750 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                <CloudCheck size={12} className="text-emerald-500 animate-pulse" />
-                <span>Cloud Sync Connected</span>
+            {isFirebaseEnabled ? (
+              <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                <CloudCheck size={12} className="text-indigo-600" />
+                <span>Cloud Firestore Active</span>
               </div>
             ) : (
-              <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+              <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
                 <Database size={11} className="text-amber-500" />
-                <span>Sandbox Mode (Offline Local)</span>
+                <span>Sandbox Mode (LocalStorage)</span>
               </div>
             )}
 
@@ -526,6 +540,19 @@ export default function App() {
                 <span>AI</span>
               </button>
 
+              {/* Google Sheets Sync btn */}
+              <button
+                onClick={() => setActiveTab("sheets")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                  activeTab === "sheets"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <FileSpreadsheet size={16} />
+                <span>Google Sheets Sync</span>
+              </button>
+
               {/* Portal Leads btn */}
               <button
                 onClick={() => setActiveTab("portals")}
@@ -550,19 +577,6 @@ export default function App() {
               >
                 <HardDriveDownload size={16} />
                 <span>Download Reports</span>
-              </button>
-
-              {/* Google Sheets Sync btn */}
-              <button
-                onClick={() => setActiveTab("sheets_sync")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
-                  activeTab === "sheets_sync"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <FileSpreadsheet size={16} />
-                <span>Google Sheets Sync</span>
               </button>
 
               {/* Campaign Upload & Change Log btn */}
@@ -671,6 +685,28 @@ export default function App() {
               </svg>
               <p className="text-xs font-semibold font-display text-slate-600">Reticulating database connections...</p>
             </div>
+          ) : isFirebaseEnabled && !user ? (
+            <div className="max-w-md mx-auto my-12 p-8 bg-white border border-slate-200 rounded-2xl shadow-xs text-center space-y-6 animate-fade-in">
+              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto border border-indigo-100">
+                <ShieldAlert size={24} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold font-display text-slate-900 tracking-tight">Cloud Workspace Locked</h2>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  Campaign Intelligence tracking and log chronicles require secure Google authentication to view and synchronize team data.
+                </p>
+              </div>
+              <button
+                onClick={handleGoogleSignIn}
+                className="w-full h-11 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs px-4 rounded-xl shadow-xs transition-all cursor-pointer font-display"
+              >
+                <LogIn size={14} />
+                <span>Sign in with Google</span>
+              </button>
+              <div className="text-[10px] text-slate-400 font-medium">
+                Uses Firebase Authentication with verified tenant access policies
+              </div>
+            </div>
           ) : (
             <div className="animate-fade-in space-y-6">
               <OnboardingGuide onNavigate={setActiveTab} />
@@ -709,6 +745,15 @@ export default function App() {
                   creatives={creatives}
                   campaigns={mergedCampaigns}
                   onSaveCreative={handleSaveCreative}
+                  onSaveChangeLog={handleSaveChangeLogEntry}
+                />
+              )}
+              {activeTab === "sheets" && (
+                <GoogleSheetsSync
+                  campaigns={mergedCampaigns}
+                  onImportLeads={handleImportLeads}
+                  onImportPerformance={handleImportPerformance}
+                  onImportTargets={handleImportTargets}
                   onSaveChangeLog={handleSaveChangeLogEntry}
                 />
               )}
@@ -794,14 +839,6 @@ export default function App() {
                   changeLogs={changeLogEntries}
                   onSaveChangeLog={handleSaveChangeLogEntry}
                   onDeleteChangeLog={handleDeleteChangeLogEntry}
-                />
-              )}
-              {activeTab === "sheets_sync" && (
-                <GoogleSheetsSync
-                  campaigns={mergedCampaigns}
-                  onImportLeads={handleImportLeads}
-                  onImportPerformance={handleImportPerformance}
-                  onImportTargets={handleImportTargets}
                 />
               )}
             </div>
