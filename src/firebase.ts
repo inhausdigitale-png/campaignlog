@@ -30,12 +30,12 @@ if (
     }
     auth = getAuth(app);
     isFirebaseConfigured = true;
+    isFirebaseEnabled = true;
     console.log("[FIREBASE] Initialized successfully with Cloud Firestore.");
 
     // Track active signed-in session dynamically
     onAuthStateChanged(auth, (usr) => {
       isCloudSyncActive = usr !== null;
-      isFirebaseEnabled = usr !== null; // Dynamically enable sync only when user is logged in
       console.log(`[FIREBASE] Live sync state updated. Active: ${isCloudSyncActive}, isFirebaseEnabled: ${isFirebaseEnabled}`);
     });
   } catch (error) {

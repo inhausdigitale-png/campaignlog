@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { LogIn, Shield, Users, Mail, Compass, HelpCircle, ArrowRight, Eye, CheckCircle2 } from "lucide-react";
+import { LogIn, Shield, Users, Mail, Compass, HelpCircle, ArrowRight, Eye, CheckCircle2, ShieldCheck } from "lucide-react";
 import { SimulatedRoleType, Invite } from "../types";
 
 interface LoginPageProps {
@@ -8,6 +8,8 @@ interface LoginPageProps {
   isFirebaseConfigured: boolean;
   isFirebaseEnabled: boolean;
   invites: Invite[];
+  authError?: string | null;
+  onClearAuthError?: () => void;
 }
 
 export default function LoginPage({
@@ -16,66 +18,74 @@ export default function LoginPage({
   isFirebaseConfigured,
   isFirebaseEnabled,
   invites,
+  authError,
+  onClearAuthError,
 }: LoginPageProps) {
   const [emailInput, setEmailInput] = useState("");
   const [selectedRole, setSelectedRole] = useState<SimulatedRoleType>("Admin");
-  const [matchedInvite, setMatchedInvite] = useState<Invite | null>(null);
-  const [checkedEmail, setCheckedEmail] = useState("");
   const [errorText, setErrorText] = useState("");
 
-  const handleCheckEmailInvite = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorText("");
-    if (!emailInput.trim() || !emailInput.includes("@")) {
-      setErrorText("Please specify a valid email address to search for invites.");
-      return;
-    }
-
-    const email = emailInput.trim().toLowerCase();
-    const found = invites.find((inv) => inv.email.toLowerCase() === email && inv.status === "pending");
     
-    setCheckedEmail(email);
-    if (found) {
-      setMatchedInvite(found);
-      setSelectedRole(found.role);
-    } else {
-      setMatchedInvite(null);
-    }
-  };
-
-  const handleAcceptAndLogin = () => {
-    if (matchedInvite && checkedEmail) {
-      // Execute role promotion
-      onGuestSignIn(checkedEmail, matchedInvite.role);
-    }
-  };
-
-  const handleStandardGuestLogin = () => {
-    if (!emailInput.trim() || !emailInput.includes("@")) {
-      setErrorText("Please input a valid email address to log in.");
+    const email = emailInput.trim();
+    if (!email || !email.includes("@")) {
+      setErrorText("Please enter a valid email address.");
       return;
     }
-    onGuestSignIn(emailInput.trim(), selectedRole);
+
+    const emailLower = email.toLowerCase();
+    
+    // Auto-detect invitation
+    const foundInvite = invites.find(
+      (inv) => inv.email.toLowerCase() === emailLower && inv.status === "pending"
+    );
+
+    if (foundInvite) {
+      onGuestSignIn(email, foundInvite.role);
+    } else {
+      onGuestSignIn(email, selectedRole);
+    }
   };
+
+  // Compute active invitations to show helpfully
+  const pendingInvites = invites.filter((inv) => inv.status === "pending");
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4 font-sans select-none" id="login-screen-outer">
-      <div className="w-full max-w-lg bg-white border border-slate-200 rounded-3xl p-8 shadow-xl relative overflow-hidden" id="login-card-container">
+      <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-8 shadow-xl relative overflow-hidden" id="login-card-container">
         {/* Subtle accent backdrop decoration */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600" />
 
         {/* Branding header */}
-        <div className="text-center mb-8 pt-4">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-550 bg-indigo-600 text-white mb-4 shadow-sm shadow-indigo-100">
+        <div className="text-center mb-6 pt-4">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-600 text-white mb-4 shadow-sm shadow-indigo-150">
             <Shield size={24} />
           </div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight font-sans">
             Campaign Intelligence Copilot
           </h1>
-          <p className="text-xs text-slate-500 font-medium mt-1 leading-normal uppercase tracking-wider">
+          <p className="text-xs text-slate-400 font-bold mt-1 leading-normal uppercase tracking-wider">
             Enterprise Portal &amp; Log Manager
           </p>
         </div>
+
+        {/* Google Authentication Diagnostic Warnings */}
+        {authError && (
+          <div className="mb-5 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-[11px] text-amber-900 text-left relative" id="auth_error_visual_alert">
+            <span className="font-extrabold uppercase tracking-wider text-[9px] text-amber-800 block mb-1">⚠️ Sign-In Warning</span>
+            <p className="leading-relaxed font-semibold">{authError}</p>
+            {onClearAuthError && (
+              <button 
+                onClick={onClearAuthError}
+                className="absolute top-2 right-2 text-amber-600 hover:text-amber-900 font-extrabold text-[10px] uppercase cursor-pointer"
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Google Sign In option */}
         {isFirebaseConfigured && (
@@ -103,136 +113,119 @@ export default function LoginPage({
                   fill="#EA4335"
                 />
               </svg>
-              <span>Authenticate using Google Workspace</span>
+              <span>Authenticate with Google</span>
             </button>
             <div className="relative flex py-4 items-center">
               <div className="flex-grow border-t border-slate-150" />
-              <span className="flex-shrink mx-4 text-[10px] text-slate-400 font-bold uppercase tracking-wider">or verify email invitation</span>
+              <span className="flex-shrink mx-4 text-[10px] text-slate-400 font-bold uppercase tracking-wider">or direct portal access</span>
               <div className="flex-grow border-t border-slate-150" />
             </div>
           </div>
         )}
 
-        {/* Invite verification & Guest login Form */}
-        <div className="space-y-5">
-          {/* Section info */}
-          <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 text-left">
-            <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-widest block mb-1">
-              Simulated Team Environment
-            </span>
-            <p className="text-[11px] text-indigo-650 text-indigo-700 leading-relaxed">
-              Log in with your corporate email address. If an administrator invited you via the User Roles Settings panel, your permissions will be assigned automatically.
+        {/* Combined One-Click Sign In Form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 pl-1 text-left">
+              Corporate Email Address
+            </label>
+            <div className="relative">
+              <input
+                id="login_email_input"
+                type="email"
+                required
+                value={emailInput}
+                onChange={(e) => {
+                  setEmailInput(e.target.value);
+                  setErrorText("");
+                }}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-9 pr-4 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 block"
+                placeholder="name@company.com"
+              />
+              <Mail className="absolute left-3.5 top-3.5 text-slate-400" size={14} />
+            </div>
+            {errorText && <p className="text-[10px] text-rose-500 font-bold mt-1 text-left pl-1">{errorText}</p>}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5 pl-1">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                Simulation Security Role
+              </label>
+              {emailInput.trim() && invites.some(inv => inv.email.toLowerCase() === emailInput.trim().toLowerCase() && inv.status === "pending") && (
+                <span className="text-[10px] text-emerald-600 font-extrabold uppercase animate-pulse">
+                  ✨ Match Detected
+                </span>
+              )}
+            </div>
+            <select
+              id="login_role_select"
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value as SimulatedRoleType)}
+              className="w-full bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-705 py-2.5 px-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="Admin">🛠️ Super Admin (Full Read/Write/Settings)</option>
+              <option value="CampaignManager">📣 Campaign Manager (Read/Write Campaigns)</option>
+              <option value="LeadAgent">👥 Sales Lead Agent (Manage Leads Only)</option>
+              <option value="Auditor">👁️ View-Only Auditor (Read-Only Access)</option>
+            </select>
+            <p className="text-[10px] text-slate-400 mt-1.5 text-left leading-normal pl-1">
+              * Note: If an Administrator has dispatched an invitation to this email address, your role policy will be automatically applied upon entering.
             </p>
           </div>
 
-          <form onSubmit={handleCheckEmailInvite} className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 pl-1 text-left">
-                Corporate Email Address
-              </label>
-              <div className="relative">
-                <input
-                  id="login_email_input"
-                  type="email"
-                  required
-                  value={emailInput}
-                  onChange={(e) => {
-                    setEmailInput(e.target.value);
-                    setErrorText("");
-                  }}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-9 pr-24 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 block"
-                  placeholder="name@company.com"
-                />
-                <Mail className="absolute left-3.5 top-3.5 text-slate-450 text-slate-400" size={14} />
+          <button
+            id="btn_guest_access_submit"
+            type="submit"
+            className="w-full flex items-center justify-center gap-2 bg-indigo-650 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-xs transition-all cursor-pointer mt-2"
+          >
+            <LogIn size={14} />
+            <span>Enter Workspace Portal</span>
+            <ArrowRight size={13} />
+          </button>
+        </form>
+
+        {/* Display live pending invitations as helpful presets or hints */}
+        {pendingInvites.length > 0 && (
+          <div className="mt-6 pt-5 border-t border-slate-100 text-left">
+            <span className="text-[9px] font-bold text-indigo-800 uppercase tracking-widest block mb-2">
+              Active Pending Invitations ({pendingInvites.length})
+            </span>
+            <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
+              {pendingInvites.map((inv) => (
                 <button
-                  id="btn_check_invites_trigger"
-                  type="submit"
-                  className="absolute right-1.5 top-1.5 bottom-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] uppercase px-3 rounded-lg transition-all cursor-pointer"
+                  key={inv.id}
+                  onClick={() => {
+                    setEmailInput(inv.email);
+                    setSelectedRole(inv.role);
+                  }}
+                  className="w-full flex items-center justify-between text-[11px] bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100/50 rounded-lg p-2 transition-all text-left cursor-pointer"
                 >
-                  Verify Access
+                  <span className="font-bold text-indigo-950 truncate max-w-[170px]" title={inv.email}>
+                    {inv.email}
+                  </span>
+                  <span className="bg-white px-1.5 py-0.5 rounded text-[9px] font-extrabold text-indigo-700 uppercase border border-indigo-100">
+                    {inv.role}
+                  </span>
                 </button>
-              </div>
-              {errorText && <p className="text-[10px] text-rose-500 font-bold mt-1 text-left pl-1">{errorText}</p>}
+              ))}
             </div>
-          </form>
-
-          {/* Interactive Case handling of results */}
-          {checkedEmail && (
-            <div className="border border-dashed border-slate-200 rounded-2xl p-4 text-left animate-fade-in">
-              {matchedInvite ? (
-                <div className="space-y-3">
-                  <div className="flex items-start gap-2.5">
-                    <CheckCircle2 className="text-emerald-500 shrink-0 mt-0.5" size={16} />
-                    <div>
-                      <span className="text-xs font-bold text-emerald-800">Pending Invite Discovered!</span>
-                      <p className="text-[11px] text-emerald-600 mt-1">
-                        You have a pending invitation to join as <span className="font-extrabold">{matchedInvite.role}</span>. Issued by <span className="underline">{matchedInvite.invitedBy}</span>.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    id="btn_accept_role_invite"
-                    onClick={handleAcceptAndLogin}
-                    className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 font-bold text-[11px] text-white py-2 px-3 rounded-xl transition-all shadow-xs cursor-pointer"
-                  >
-                    <span>Accept Invite &amp; Establish Profile</span>
-                    <ArrowRight size={12} />
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-[11px] text-slate-500">
-                    No active pending invites found for <span className="font-semibold text-slate-700">{checkedEmail}</span>. You can establish a new guest profile or proceed with manually simulated capabilities:
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-3 pb-1">
-                    <div>
-                      <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1 pl-1">
-                        Select Security Profile
-                      </label>
-                      <select
-                        id="login_role_select"
-                        value={selectedRole}
-                        onChange={(e) => setSelectedRole(e.target.value as SimulatedRoleType)}
-                        className="w-full bg-slate-50 border border-slate-200 text-[11px] font-bold text-slate-700 py-2 px-2.5 rounded-xl text-left focus:outline-none cursor-pointer"
-                      >
-                        <option value="Admin">🛡️ Super Admin</option>
-                        <option value="CampaignManager">📣 Campaign Manager</option>
-                        <option value="LeadAgent">👥 Sales Lead Agent</option>
-                        <option value="Auditor">👁️ View-Only Auditor</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-end">
-                      <button
-                        id="btn_guest_access_submit"
-                        type="button"
-                        onClick={handleStandardGuestLogin}
-                        className="w-full bg-indigo-650 bg-indigo-600 hover:bg-indigo-755 hover:bg-indigo-700 text-white font-bold text-[11px] py-2 px-2 rounded-xl text-center cursor-pointer flex items-center justify-center gap-1"
-                      >
-                        <span>Establish Access</span>
-                        <ArrowRight size={11} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Footer info about sandbox mode */}
-        <div className="mt-8 pt-4 border-t border-slate-100 flex justify-between text-[10px] text-slate-400 font-medium">
+        <div className="mt-8 pt-4 border-t border-slate-105 border-slate-100 flex justify-between text-[10px] text-slate-400 font-medium">
           <div className="flex items-center gap-1">
             <Compass size={11} />
             <span>Sandbox Mode Enabled</span>
           </div>
           <div className="flex items-center gap-1">
             <HelpCircle size={11} />
-            <span>Support: gouthamarun123@gmail.com</span>
+            <span>gouthamarun123@gmail.com</span>
           </div>
         </div>
       </div>
     </div>
   );
 }
+

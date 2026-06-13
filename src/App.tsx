@@ -127,7 +127,11 @@ export default function App() {
     const saved = localStorage.getItem("authenticated_guest_user");
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed?.email) {
+          dataService.setUserEmail(parsed.email);
+        }
+        return parsed;
       } catch (e) {
         return null;
       }
@@ -136,6 +140,7 @@ export default function App() {
   });
   const [authLoading, setAuthLoading] = useState<boolean>(isFirebaseConfigured);
   const [loading, setLoading] = useState<boolean>(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Load database snapshots
   const loadAllDatabaseStates = async () => {
@@ -191,6 +196,7 @@ export default function App() {
         if (authTimeout) clearTimeout(authTimeout);
         if (currUser) {
           setUser(currUser);
+          dataService.setUserEmail(currUser.email);
           // Auto promotion check on real sign in too!
           if (currUser.email) {
             const emailLower = currUser.email.toLowerCase();
@@ -213,12 +219,16 @@ export default function App() {
           const savedGuest = localStorage.getItem("authenticated_guest_user");
           if (savedGuest) {
             try {
-              setUser(JSON.parse(savedGuest));
+              const parsed = JSON.parse(savedGuest);
+              setUser(parsed);
+              dataService.setUserEmail(parsed.email);
             } catch (e) {
               setUser(null);
+              dataService.setUserEmail(null);
             }
           } else {
             setUser(null);
+            dataService.setUserEmail(null);
           }
         }
         setAuthLoading(false);
@@ -262,6 +272,7 @@ export default function App() {
 
   const handleGoogleSignIn = async () => {
     if (!auth) return;
+    setAuthError(null);
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
@@ -285,8 +296,21 @@ export default function App() {
       setUser(googleUser);
       localStorage.removeItem("authenticated_guest_user");
       await loadAllDatabaseStates();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Google login failed:", err);
+      let errorMsg = err?.message || String(err);
+      if (err?.code === "auth/unauthorized-domain") {
+        errorMsg = "Unauthorized Domain: This preview URL is not authorized in your Firebase console. Please go to Auth -> Settings -> Authorized Domains and append this workspace hostname.";
+      } else if (err?.code === "auth/popup-blocked") {
+        errorMsg = "Popup Blocked: Your browser blocked the authentication popup. Please click allow or try opening this sandbox page in a new fullscreen window.";
+      } else if (err?.code === "auth/operation-not-allowed") {
+        errorMsg = "Sign-in Provider Disabled: Google Auth is disabled in Firebase. Enable it in Auth -> Sign-in methods.";
+      } else if (err?.code === "auth/network-request-failed") {
+        errorMsg = "Network Blocked / Cookies Disabled: Sandbox iframe restrictions may be preventing Google Sign-In. Try opening the workspace in a new tab, or use the direct corporate email access option below.";
+      } else {
+        errorMsg = `Authentication error (${err?.code || 'unknown'}): ${err?.message || errorMsg}`;
+      }
+      setAuthError(errorMsg);
     }
   };
 
@@ -311,6 +335,7 @@ export default function App() {
       providerId: "simulated-provider"
     };
     
+    dataService.setUserEmail(email);
     setUser(guestUser);
     setUserRole(roleToSet);
     localStorage.setItem("authenticated_guest_user", JSON.stringify(guestUser));
@@ -323,6 +348,7 @@ export default function App() {
     if (auth && !user?.isGuest) {
       await signOut(auth);
     }
+    dataService.setUserEmail(null);
     setUser(null);
     localStorage.removeItem("authenticated_guest_user");
     await loadAllDatabaseStates();
@@ -506,6 +532,8 @@ export default function App() {
         isFirebaseConfigured={isFirebaseConfigured}
         isFirebaseEnabled={isFirebaseEnabled}
         invites={invites}
+        authError={authError}
+        onClearAuthError={() => setAuthError(null)}
       />
     );
   }

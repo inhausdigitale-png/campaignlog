@@ -509,28 +509,67 @@ const DEFAULT_RULE_CONFIGURATION: RuleConfiguration = {
   updatedAt: new Date("2026-06-01T00:00:00Z").toISOString(),
 };
 
+let activeUserEmail: string | null = null;
+
+// Helper to get partitioned key
+function getPartitionedKey(key: string): string {
+  if (key === KEYS.INVITES) {
+    return key;
+  }
+  if (activeUserEmail) {
+    const safeEmail = activeUserEmail.toLowerCase().replace(/[^a-z0-9]/g, "_");
+    return `${key}_${safeEmail}`;
+  }
+  return key;
+}
+
 // Helper to load LocalStorage state
 function loadLocal<T>(key: string, defaultVals: T[]): T[] {
+  const finalKey = getPartitionedKey(key);
   try {
-    const data = localStorage.getItem(key);
+    const data = localStorage.getItem(finalKey);
     if (!data) {
-      localStorage.setItem(key, JSON.stringify(defaultVals));
+      localStorage.setItem(finalKey, JSON.stringify(defaultVals));
       return defaultVals;
     }
     return JSON.parse(data);
   } catch (err) {
-    console.warn(`LocalStorage failed to parse key ${key}, using defaults.`);
+    console.warn(`LocalStorage failed to parse key ${finalKey}, using defaults.`);
     return defaultVals;
   }
 }
 
 // Helper to save LocalStorage state
 function saveLocal<T>(key: string, data: T[]) {
+  const finalKey = getPartitionedKey(key);
   try {
-    localStorage.setItem(key, JSON.stringify(data));
+    localStorage.setItem(finalKey, JSON.stringify(data));
   } catch (err) {
-    console.error(`Failed saving localstorage key ${key}`);
+    console.error(`Failed saving localstorage key ${finalKey}`);
   }
+}
+
+// Global path/collection wrappers for Firebase to isolate collections by user email partitions
+function getCollectionRef(name: string) {
+  if (name === "invites") {
+    return collection(db, "invites");
+  }
+  if (activeUserEmail) {
+    const safeEmail = activeUserEmail.toLowerCase().replace(/[^a-z0-9]/g, "_");
+    return collection(db, "user_partitions", safeEmail, name);
+  }
+  return collection(db, name);
+}
+
+function getDocRef(name: string, docId: string) {
+  if (name === "invites") {
+    return doc(db, "invites", docId);
+  }
+  if (activeUserEmail) {
+    const safeEmail = activeUserEmail.toLowerCase().replace(/[^a-z0-9]/g, "_");
+    return doc(db, "user_partitions", safeEmail, name, docId);
+  }
+  return doc(db, name, docId);
 }
 
 const FIRESTORE_TIMEOUT_MS = 1500;
@@ -557,12 +596,18 @@ async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
 
 // Exported Data Service Coordinating both Local and Cloud Database Engines
 export const dataService = {
+  // Set partition email
+  setUserEmail(email: string | null) {
+    activeUserEmail = email ? email.toLowerCase() : null;
+    console.log(`[DATA_SERVICE] Active partition updated: ${activeUserEmail || "global_sandbox"}`);
+  },
+
   // --- Campaigns ---
   async getCampaigns(): Promise<Campaign[]> {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "campaigns"), orderBy("createdAt", "desc"));
+          const q = query(getCollectionRef("campaigns"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Campaign));
 
@@ -570,7 +615,7 @@ export const dataService = {
           if (list.length === 0) {
             console.log("[FIREBASE] Campaign collection empty. Seeding defaults...");
             for (const camp of INITIAL_CAMPAIGNS) {
-              await setDoc(doc(db, "campaigns", camp.id), camp);
+              await setDoc(getDocRef("campaigns", camp.id), camp);
             }
             return INITIAL_CAMPAIGNS;
           }
@@ -602,7 +647,7 @@ export const dataService = {
 
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "campaigns", activeId), finalCampaign);
+        await setDoc(getDocRef("campaigns", activeId), finalCampaign);
         // Create an audit trail record
         const logId = "log-" + Math.random().toString(36).substring(2, 9);
         const logRecord: AuditLog = {
@@ -614,7 +659,7 @@ export const dataService = {
           details: logDescription,
           timestamp: new Date().toISOString(),
         };
-        await setDoc(doc(db, "audit_logs", logId), logRecord);
+        await setDoc(getDocRef("audit_logs", logId), logRecord);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `campaigns/${activeId}`);
       }
@@ -663,7 +708,7 @@ export const dataService = {
   async deleteCampaign(id: string, name: string, loggedInUserEmail: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "campaigns", id));
+        await deleteDoc(getDocRef("campaigns", id));
         // Add audit trail record
         const logId = "log-" + Math.random().toString(36).substring(2, 9);
         const logRecord: AuditLog = {
@@ -675,7 +720,7 @@ export const dataService = {
           details: `Permenently deleted campaign '${name}' from database tracking system.`,
           timestamp: new Date().toISOString(),
         };
-        await setDoc(doc(db, "audit_logs", logId), logRecord);
+        await setDoc(getDocRef("audit_logs", logId), logRecord);
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `campaigns/${id}`);
@@ -706,14 +751,14 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"));
+          const q = query(getCollectionRef("audit_logs"), orderBy("timestamp", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as AuditLog));
 
           if (list.length === 0) {
             console.log("[FIREBASE] Seed audit trail logs...");
             for (const l of INITIAL_AUDITS) {
-              await setDoc(doc(db, "audit_logs", l.id), l);
+              await setDoc(getDocRef("audit_logs", l.id), l);
             }
             return INITIAL_AUDITS;
           }
@@ -736,7 +781,7 @@ export const dataService = {
 
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "audit_logs", finalLog.id), finalLog);
+        await setDoc(getDocRef("audit_logs", finalLog.id), finalLog);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `audit_logs/${finalLog.id}`);
       }
@@ -753,14 +798,14 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "portal_leads"), orderBy("createdAt", "desc"));
+          const q = query(getCollectionRef("portal_leads"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Lead));
 
           if (list.length === 0) {
             console.log("[FIREBASE] Seed lead portal records...");
             for (const l of INITIAL_LEADS) {
-              await setDoc(doc(db, "portal_leads", l.id), l);
+              await setDoc(getDocRef("portal_leads", l.id), l);
             }
             return INITIAL_LEADS;
           }
@@ -785,7 +830,7 @@ export const dataService = {
 
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "portal_leads", activeId), finalLead);
+        await setDoc(getDocRef("portal_leads", activeId), finalLead);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `portal_leads/${activeId}`);
       }
@@ -805,7 +850,7 @@ export const dataService = {
   async deleteLead(id: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "portal_leads", id));
+        await deleteDoc(getDocRef("portal_leads", id));
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `portal_leads/${id}`);
@@ -824,14 +869,14 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "creative_performance"), orderBy("createdAt", "desc"));
+          const q = query(getCollectionRef("creative_performance"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CreativeAsset));
 
           if (list.length === 0) {
             console.log("[FIREBASE] Seed creative collection files...");
             for (const c of INITIAL_CREATIVES) {
-              await setDoc(doc(db, "creative_performance", c.id), c);
+              await setDoc(getDocRef("creative_performance", c.id), c);
             }
             return INITIAL_CREATIVES;
           }
@@ -856,7 +901,7 @@ export const dataService = {
 
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "creative_performance", activeId), finalCreative);
+        await setDoc(getDocRef("creative_performance", activeId), finalCreative);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `creative_performance/${activeId}`);
       }
@@ -876,7 +921,7 @@ export const dataService = {
   async deleteCreative(id: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "creative_performance", id));
+        await deleteDoc(getDocRef("creative_performance", id));
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `creative_performance/${id}`);
@@ -895,13 +940,13 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "campaign_reports"), orderBy("createdAt", "desc"));
+          const q = query(getCollectionRef("campaign_reports"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CampaignReport));
           if (list.length === 0) {
             console.log("[FIREBASE] Seed campaign reports...");
             for (const rep of INITIAL_REPORTS) {
-              await setDoc(doc(db, "campaign_reports", rep.id), rep);
+              await setDoc(getDocRef("campaign_reports", rep.id), rep);
             }
             return INITIAL_REPORTS;
           }
@@ -925,7 +970,7 @@ export const dataService = {
     };
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "campaign_reports", activeId), finalReport);
+        await setDoc(getDocRef("campaign_reports", activeId), finalReport);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `campaign_reports/${activeId}`);
       }
@@ -945,7 +990,7 @@ export const dataService = {
   async deleteCampaignReport(id: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "campaign_reports", id));
+        await deleteDoc(getDocRef("campaign_reports", id));
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `campaign_reports/${id}`);
@@ -964,13 +1009,13 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "metric_comparisons"), orderBy("createdAt", "desc"));
+          const q = query(getCollectionRef("metric_comparisons"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as MetricComparison));
           if (list.length === 0) {
             console.log("[FIREBASE] Seed metric comparisons...");
             for (const comp of INITIAL_COMPARISONS) {
-              await setDoc(doc(db, "metric_comparisons", comp.id), comp);
+              await setDoc(getDocRef("metric_comparisons", comp.id), comp);
             }
             return INITIAL_COMPARISONS;
           }
@@ -994,7 +1039,7 @@ export const dataService = {
     };
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "metric_comparisons", activeId), finalComp);
+        await setDoc(getDocRef("metric_comparisons", activeId), finalComp);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `metric_comparisons/${activeId}`);
       }
@@ -1014,7 +1059,7 @@ export const dataService = {
   async deleteMetricComparison(id: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "metric_comparisons", id));
+        await deleteDoc(getDocRef("metric_comparisons", id));
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `metric_comparisons/${id}`);
@@ -1033,13 +1078,13 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "change_log_entries"), orderBy("createdAt", "desc"));
+          const q = query(getCollectionRef("change_log_entries"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ChangeLogEntry));
           if (list.length === 0) {
             console.log("[FIREBASE] Seed change log entries...");
             for (const chg of INITIAL_CHANGE_LOG_ENTRIES) {
-              await setDoc(doc(db, "change_log_entries", chg.id), chg);
+              await setDoc(getDocRef("change_log_entries", chg.id), chg);
             }
             return INITIAL_CHANGE_LOG_ENTRIES;
           }
@@ -1063,7 +1108,7 @@ export const dataService = {
     };
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "change_log_entries", activeId), finalChg);
+        await setDoc(getDocRef("change_log_entries", activeId), finalChg);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `change_log_entries/${activeId}`);
       }
@@ -1083,7 +1128,7 @@ export const dataService = {
   async deleteChangeLogEntry(id: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "change_log_entries", id));
+        await deleteDoc(getDocRef("change_log_entries", id));
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `change_log_entries/${id}`);
@@ -1102,13 +1147,13 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "portal_reports"), orderBy("date", "desc"));
+          const q = query(getCollectionRef("portal_reports"), orderBy("date", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as PortalReportRow));
           if (list.length === 0) {
             console.log("[FIREBASE] Seeding initial portal reports...");
             for (const r of INITIAL_PORTAL_REPORTS) {
-              await setDoc(doc(db, "portal_reports", r.id), r);
+              await setDoc(getDocRef("portal_reports", r.id), r);
             }
             return INITIAL_PORTAL_REPORTS;
           }
@@ -1133,7 +1178,7 @@ export const dataService = {
 
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "portal_reports", activeId), finalRow);
+        await setDoc(getDocRef("portal_reports", activeId), finalRow);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `portal_reports/${activeId}`);
       }
@@ -1153,7 +1198,7 @@ export const dataService = {
   async deletePortalReport(id: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "portal_reports", id));
+        await deleteDoc(getDocRef("portal_reports", id));
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `portal_reports/${id}`);
@@ -1172,13 +1217,13 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "target_budgets"), orderBy("month", "desc"));
+          const q = query(getCollectionRef("target_budgets"), orderBy("month", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as TargetBudgetRow));
           if (list.length === 0) {
             console.log("[FIREBASE] Seeding initial target budgets...");
             for (const t of INITIAL_TARGET_BUDGETS) {
-              await setDoc(doc(db, "target_budgets", t.id), t);
+              await setDoc(getDocRef("target_budgets", t.id), t);
             }
             return INITIAL_TARGET_BUDGETS;
           }
@@ -1203,7 +1248,7 @@ export const dataService = {
 
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "target_budgets", activeId), finalRow);
+        await setDoc(getDocRef("target_budgets", activeId), finalRow);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `target_budgets/${activeId}`);
       }
@@ -1223,7 +1268,7 @@ export const dataService = {
   async deleteTargetBudget(id: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "target_budgets", id));
+        await deleteDoc(getDocRef("target_budgets", id));
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `target_budgets/${id}`);
@@ -1242,12 +1287,12 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = collection(db, "rule_settings");
+          const q = getCollectionRef("rule_settings");
           const snapshot = await getDocs(q);
           const docsList = snapshot.docs;
           if (docsList.length === 0) {
             console.log("[FIREBASE] Seed rule default settings...");
-            await setDoc(doc(db, "rule_settings", "global"), DEFAULT_RULE_CONFIGURATION);
+            await setDoc(getDocRef("rule_settings", "global"), DEFAULT_RULE_CONFIGURATION);
             return DEFAULT_RULE_CONFIGURATION;
           }
           const found = docsList.find(d => d.id === "global") || docsList[0];
@@ -1271,7 +1316,7 @@ export const dataService = {
 
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "rule_settings", "global"), finalRule);
+        await setDoc(getDocRef("rule_settings", "global"), finalRule);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, "rule_settings/global");
       }
@@ -1286,13 +1331,13 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "campaign_performances"), orderBy("createdAt", "desc"));
+          const q = query(getCollectionRef("campaign_performances"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CampaignPerformance));
           if (list.length === 0) {
             console.log("[FIREBASE] Seed campaign performances...");
             for (const perf of INITIAL_PERF_TRACKERS) {
-              await setDoc(doc(db, "campaign_performances", perf.id), perf);
+              await setDoc(getDocRef("campaign_performances", perf.id), perf);
             }
             return INITIAL_PERF_TRACKERS;
           }
@@ -1316,7 +1361,7 @@ export const dataService = {
     };
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "campaign_performances", activeId), finalPerf);
+        await setDoc(getDocRef("campaign_performances", activeId), finalPerf);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `campaign_performances/${activeId}`);
       }
@@ -1336,7 +1381,7 @@ export const dataService = {
   async deleteCampaignPerformance(id: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "campaign_performances", id));
+        await deleteDoc(getDocRef("campaign_performances", id));
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `campaign_performances/${id}`);
@@ -1354,7 +1399,7 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(collection(db, "invites"), orderBy("createdAt", "desc"));
+          const q = query(getCollectionRef("invites"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const results: Invite[] = [];
           snapshot.forEach((docRef) => {
@@ -1380,7 +1425,7 @@ export const dataService = {
     };
     if (isFirebaseEnabled) {
       try {
-        await setDoc(doc(db, "invites", activeId), finalInvite);
+        await setDoc(getDocRef("invites", activeId), finalInvite);
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `invites/${activeId}`);
       }
@@ -1400,7 +1445,7 @@ export const dataService = {
   async deleteInvite(id: string): Promise<boolean> {
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(doc(db, "invites", id));
+        await deleteDoc(getDocRef("invites", id));
         return true;
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `invites/${id}`);
