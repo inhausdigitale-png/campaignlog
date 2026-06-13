@@ -1,0 +1,6 @@
+{
+  "name": "Campaign Analytics & Logging Copilot",
+  "description": "Track marketing campaigns, log updates, audit change history, capture portal leads, and analyze multi-platform ad creative performance with AI recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

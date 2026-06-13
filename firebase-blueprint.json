@@ -1,0 +1,275 @@
+{
+  "entities": {
+    "campaign": {
+      "title": "Campaign",
+      "description": "Represents a marketing ad campaign and its high-level performance metrics.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the campaign" },
+        "name": { "type": "string", "description": "The name of the campaign" },
+        "status": { "type": "string", "enum": ["active", "paused", "completed", "draft"] },
+        "platform": { "type": "string", "description": "Platform like Google Ads, Meta (Facebook), LinkedIn, TikTok" },
+        "budget": { "type": "number", "description": "Allocated budget in USD" },
+        "spend": { "type": "number", "description": "Actual spend in USD" },
+        "conversions": { "type": "integer", "description": "Number of recorded conversions" },
+        "clicks": { "type": "integer", "description": "Number of ad clicks" },
+        "impressions": { "type": "integer", "description": "Number of impressions" },
+        "startDate": { "type": "string", "format": "date", "description": "Starting date" },
+        "endDate": { "type": "string", "format": "date", "description": "Closing date" },
+        "objectives": { "type": "string", "description": "Goal or objective of the campaign" },
+        "ownerId": { "type": "string", "description": "UID of the owner who created it" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Time of creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Time of last update" }
+      },
+      "required": ["id", "name", "status", "platform", "budget", "spend", "conversions", "clicks", "impressions", "ownerId"]
+    },
+    "auditLog": {
+      "title": "AuditLog",
+      "description": "Record of historical modifications made to marketing efforts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique log identifier" },
+        "campaignId": { "type": "string", "description": "Target campaign identifier" },
+        "campaignName": { "type": "string", "description": "Name of the campaign at that time" },
+        "changedBy": { "type": "string", "description": "Email or user ID of reporter" },
+        "action": { "type": "string", "description": "Action type: e.g. Create, Edit Status, etc." },
+        "details": { "type": "string", "description": "Grammatical comparison of previous vs new state" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Timestamp of modification" }
+      },
+      "required": ["id", "campaignId", "campaignName", "changedBy", "action", "details", "timestamp"]
+    },
+    "lead": {
+      "title": "Lead",
+      "description": "Information about prospective leads received through portal captures.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Lead identifier" },
+        "campaignId": { "type": "string", "description": "Source campaign identifier if applicable" },
+        "campaignName": { "type": "string", "description": "Source campaign name if applicable" },
+        "leadName": { "type": "string", "description": "Contact full name" },
+        "email": { "type": "string", "description": "Contact email address" },
+        "phone": { "type": "string", "description": "Contact telephone number" },
+        "platform": { "type": "string", "description": "Acquisition platform source" },
+        "status": { "type": "string", "enum": ["New", "Contacted", "Negotiating", "Closed Won", "Closed Lost"] },
+        "notes": { "type": "string", "description": "Follow-up notes or remarks" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Acquisition time" }
+      },
+      "required": ["id", "leadName", "email", "status", "createdAt"]
+    },
+    "creativePerformance": {
+      "title": "CreativePerformance",
+      "description": "Visual ad creatives used across the platforms with performance parameters.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Creative asset identifier" },
+        "campaignId": { "type": "string", "description": "Associated campaign identifier" },
+        "campaignName": { "type": "string", "description": "Associated campaign name" },
+        "name": { "type": "string", "description": "Name of the creative variation" },
+        "platform": { "type": "string", "description": "Target ad platform" },
+        "imageUrl": { "type": "string", "description": "Base64 payload or URL of creative graphic" },
+        "headline": { "type": "string", "description": "Ad title/headline copy" },
+        "bodyText": { "type": "string", "description": "Body description copy" },
+        "clicks": { "type": "integer", "description": "Clicks recorded on this specific creative" },
+        "conversions": { "type": "integer", "description": "Conversions attributed to this creative" },
+        "spend": { "type": "number", "description": "Ad budget spent on this creative" },
+        "status": { "type": "string", "enum": ["active", "paused"] },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creative generation time" }
+      },
+      "required": ["id", "campaignId", "name", "platform", "imageUrl", "headline", "bodyText", "clicks", "conversions", "spend", "status", "createdAt"]
+    },
+    "campaignReport": {
+      "title": "CampaignReport",
+      "description": "Information regarding uploaded campaign metric reports.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "projectName": { "type": "string" },
+        "campaignName": { "type": "string" },
+        "adAccountId": { "type": "string" },
+        "leads": { "type": "integer" },
+        "reach": { "type": "integer" },
+        "impression": { "type": "integer" },
+        "amountSpend": { "type": "number" },
+        "targetLeads": { "type": "integer" },
+        "achievedLeads": { "type": "integer" },
+        "svcBooking": { "type": "integer" },
+        "adsets": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "date", "projectName", "campaignName", "adAccountId", "leads", "reach", "impression", "amountSpend", "targetLeads", "achievedLeads", "svcBooking", "adsets", "createdAt"]
+    },
+    "metricComparison": {
+      "title": "MetricComparison",
+      "description": "Before vs After comparisons of marketing performance metrics.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "metric": { "type": "string" },
+        "beforeValue": { "type": "string" },
+        "afterValue": { "type": "string" },
+        "improved": { "type": "string", "enum": ["Yes", "No", "Neutral"] },
+        "leads": { "type": "integer" },
+        "svc": { "type": "integer" },
+        "svcPercent": { "type": "number" },
+        "booked": { "type": "integer" },
+        "bookedPercent": { "type": "number" },
+        "owner": { "type": "string" },
+        "followUp": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "metric", "beforeValue", "afterValue", "improved", "leads", "svc", "svcPercent", "booked", "bookedPercent", "owner", "followUp", "status", "createdAt"]
+    },
+    "changeLogEntry": {
+      "title": "ChangeLogEntry",
+      "description": "Detailed log of a precise dynamic modification made to performance configurations.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "project": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "campaignName": { "type": "string" },
+        "adSetName": { "type": "string" },
+        "campaignStatus": { "type": "string" },
+        "type": { "type": "string" },
+        "changed": { "type": "string" },
+        "reason": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "date", "project", "campaignId", "campaignName", "adSetName", "campaignStatus", "type", "changed", "reason", "createdAt"]
+    },
+    "portalReportRow": {
+      "title": "PortalReportRow",
+      "description": "Daily metrics for third-party portals like Housing, 99 Acres, Magicbricks.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "portal": { "type": "string" },
+        "project": { "type": "string" },
+        "generated": { "type": "integer" },
+        "svs": { "type": "integer" },
+        "svc": { "type": "integer" },
+        "walkin": { "type": "integer" },
+        "gross": { "type": "integer" },
+        "net": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "date", "portal", "project", "generated", "svs", "svc", "walkin", "gross", "net", "createdAt"]
+    },
+    "targetBudgetRow": {
+      "title": "TargetBudgetRow",
+      "description": "Allocated monthly target budgets with weekly actual metrics.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "month": { "type": "string" },
+        "project": { "type": "string" },
+        "medium": { "type": "string" },
+        "budget": { "type": "number" },
+        "spend": { "type": "number" },
+        "totalLeadTarget": { "type": "integer" },
+        "totalLeadAchieved: ": { "type": "integer" },
+        "digitalLeadTarget": { "type": "integer" },
+        "digitalLeadAchieved": { "type": "integer" },
+        "btlLeadTarget": { "type": "integer" },
+        "btlLeadAchieved": { "type": "integer" },
+        "leadAllocation": { "type": "integer" },
+        "siteVisit": { "type": "integer" },
+        "booking": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "month", "project", "medium", "budget", "spend", "createdAt"]
+    },
+    "ruleConfiguration": {
+      "title": "RuleConfiguration",
+      "description": "Configuration thresholds for marketing CPA/CPL warning systems.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "targetCpa": { "type": "number" },
+        "minRoas": { "type": "number" },
+        "minCtr": { "type": "number" },
+        "minCvr": { "type": "number" },
+        "reviewDays": { "type": "integer" },
+        "warningSpend": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "targetCpa", "minRoas", "minCtr", "minCvr", "reviewDays", "warningSpend", "updatedAt"]
+    },
+    "campaignPerformance": {
+      "title": "CampaignPerformance",
+      "description": "Tracks fine-grained daily or weekly performance metrics for campaigns and adsets with CPL metrics.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "campaignName": { "type": "string" },
+        "adsetName": { "type": "string" },
+        "adAccountId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "leads": { "type": "integer" },
+        "impression": { "type": "integer" },
+        "reach": { "type": "integer" },
+        "ctr": { "type": "number" },
+        "amountSpend": { "type": "number" },
+        "clicks": { "type": "integer" },
+        "svc": { "type": "integer" },
+        "booked": { "type": "integer" },
+        "cplCpa": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "creativeImageUrl": { "type": "string", "description": "Base64 payload or URL of campaign creative asset" },
+        "creativeUpdatedAt": { "type": "string", "format": "date-time", "description": "Timestamp of the last creative update" },
+        "creativeNewUpdatedFlag": { "type": "boolean", "description": "Indicates whether a newly updated creative is present" }
+      },
+      "required": ["id", "campaignName", "adsetName", "adAccountId", "projectName", "leads", "impression", "reach", "ctr", "amountSpend", "clicks", "svc", "booked", "createdAt"]
+    }
+  },
+  "firestore": {
+    "campaigns": {
+      "schema": "campaign",
+      "description": "Tracks active or historical multi-platform advertising campaigns."
+    },
+    "audit_logs": {
+      "schema": "auditLog",
+      "description": "Stores transaction change logs for ad campaigns for seamless trace reporting."
+    },
+    "portal_leads": {
+      "schema": "lead",
+      "description": "Leads acquired through the landing page portal or platform captures."
+    },
+    "creative_performance": {
+      "schema": "creativePerformance",
+      "description": "Visual or textual ad creative assets with fine-grained analytics."
+    },
+    "campaign_reports": {
+      "schema": "campaignReport",
+      "description": "Stores campaign metric reports posted or parsed by marketing operators."
+    },
+    "metric_comparisons": {
+      "schema": "metricComparison",
+      "description": "Stores Before vs After performance reviews."
+    },
+    "change_log_entries": {
+      "schema": "changeLogEntry",
+      "description": "Tracks fine-grained configuration modification detail logs."
+    },
+    "portal_reports": {
+      "schema": "portalReportRow",
+      "description": "Tracks metrics for Housing, 99 Acres, Magicbricks, Reef & Floor."
+    },
+    "target_budgets": {
+      "schema": "targetBudgetRow",
+      "description": "Tracks target budgets with fine-grained weekly spend and lead metrics."
+    },
+    "rule_settings": {
+      "schema": "ruleConfiguration",
+      "description": "Custom alerts thresholds and rule configurations."
+    },
+    "campaign_performances": {
+      "schema": "campaignPerformance",
+      "description": "Fine-grained multi-metric tracking records for ad platforms."
+    }
+  }
+}
