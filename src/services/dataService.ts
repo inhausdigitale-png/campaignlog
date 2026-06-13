@@ -36,7 +36,17 @@ export const INITIAL_INVITES: Invite[] = [
     role: "Admin",
     invitedBy: "System Root",
     status: "accepted",
+    password: "admin123",
     createdAt: new Date("2026-06-01T00:00:00Z").toISOString(),
+  },
+  {
+    id: "inv-simple-admin",
+    email: "admin@copilot.com",
+    role: "Admin",
+    invitedBy: "System Root",
+    status: "accepted",
+    password: "admin123",
+    createdAt: new Date("2026-06-01T00:00:01Z").toISOString(),
   }
 ];
 

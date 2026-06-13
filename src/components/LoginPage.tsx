@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Shield, Mail, Compass, HelpCircle, ArrowRight, LogIn } from "lucide-react";
+import { Shield, Mail, Compass, HelpCircle, ArrowRight, LogIn, Lock } from "lucide-react";
 import { SimulatedRoleType, Invite } from "../types";
 
 interface LoginPageProps {
@@ -22,6 +22,7 @@ export default function LoginPage({
   onClearAuthError,
 }: LoginPageProps) {
   const [emailInput, setEmailInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
   const [errorText, setErrorText] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -34,6 +35,12 @@ export default function LoginPage({
       return;
     }
 
+    const password = passwordInput.trim();
+    if (!password) {
+      setErrorText("Please enter your corporate portal password.");
+      return;
+    }
+
     const emailLower = email.toLowerCase();
     
     // Auto-detect invitation (active or accepted)
@@ -42,9 +49,14 @@ export default function LoginPage({
     );
 
     if (foundInvite) {
-      onGuestSignIn(email, foundInvite.role);
+      const dbPassword = foundInvite.password || "admin123";
+      if (password === dbPassword) {
+        onGuestSignIn(email, foundInvite.role);
+      } else {
+        setErrorText("Access Denied: Incorrect portal password. Double-check the assigned key.");
+      }
     } else {
-      setErrorText("Access Denied: This email has not been registered. Only an administrator can create a login and give it to you.");
+      setErrorText("Access Denied: This email has not been registered. Only an administrator can create a login and password.");
     }
   };
 
@@ -84,7 +96,7 @@ export default function LoginPage({
         )}
 
         {/* Single secure direct login form */}
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 pl-1 text-left">
               Registered Corporate Email address
@@ -103,6 +115,27 @@ export default function LoginPage({
                 placeholder="name@company.com"
               />
               <Mail className="absolute left-3.5 top-3.5 text-slate-400" size={14} />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 pl-1 text-left">
+              Corporate Portal Password
+            </label>
+            <div className="relative">
+              <input
+                id="login_password_input"
+                type="password"
+                required
+                value={passwordInput}
+                onChange={(e) => {
+                  setPasswordInput(e.target.value);
+                  setErrorText("");
+                }}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-9 pr-4 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 block"
+                placeholder="••••••••••••"
+              />
+              <Lock className="absolute left-3.5 top-3.5 text-slate-400" size={14} />
             </div>
             {errorText && <p className="text-[10px] text-rose-500 font-bold mt-1.5 text-left pl-1 leading-normal">{errorText}</p>}
           </div>
@@ -124,13 +157,17 @@ export default function LoginPage({
             <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-widest block mb-2 font-display">
               Corporate Authorized Logins ({invites.length})
             </span>
-            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+            <p className="text-[10px] text-slate-400 mb-2 leading-relaxed">
+              Select an account below to automatically fill credentials &amp; simulated role profile:
+            </p>
+            <div className="space-y-1.5 max-h-45 overflow-y-auto pr-1">
               {invites.map((inv) => (
                 <button
                   key={inv.id}
                   type="button"
                   onClick={() => {
                     setEmailInput(inv.email);
+                    setPasswordInput(inv.password || "admin123");
                     setErrorText("");
                   }}
                   className="w-full flex items-center justify-between text-[11px] bg-slate-55 bg-slate-50 hover:bg-indigo-50/50 border border-slate-200/60 rounded-xl p-2.5 transition-all text-left cursor-pointer"
@@ -139,7 +176,7 @@ export default function LoginPage({
                     <span className="font-bold text-slate-800 truncate" title={inv.email}>
                       {inv.email}
                     </span>
-                    <span className="text-[9px] text-slate-400 font-medium">Assigned Credential Profile</span>
+                    <span className="text-[9px] text-slate-400 font-medium">Password: {inv.password || "admin123"}</span>
                   </div>
                   <span className="bg-white px-2 py-0.5 rounded-lg text-[9px] font-extrabold text-indigo-700 uppercase border border-slate-150 shadow-xs shrink-0 select-none">
                     {inv.role}

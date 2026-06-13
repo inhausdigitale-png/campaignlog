@@ -224,6 +224,7 @@ export interface Invite {
   invitedBy: string;
   status: "pending" | "accepted" | "declined";
   createdAt: string;
+  password?: string;
 }
 
 export interface UserRolePermission {

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { UserRolePermission, SimulatedRoleType, Invite } from "../types";
-import { Shield, ShieldAlert, Check, RotateCcw, Save, Trash, Plus, Info, Mail, UserPlus, Clock, BadgeCheck } from "lucide-react";
+import { Shield, ShieldAlert, Check, RotateCcw, Save, Trash, Plus, Info, Mail, UserPlus, Clock, BadgeCheck, Lock } from "lucide-react";
 import { ROLE_PERMISSIONS } from "../utils/indiaHelpers";
 
 interface UserRolesSettingsProps {
@@ -11,7 +11,7 @@ interface UserRolesSettingsProps {
   bypassSecurity: boolean;
   onToggleBypassSecurity: () => void;
   invites: Invite[];
-  onAddInvite: (email: string, role: string) => void;
+  onAddInvite: (email: string, role: string, password?: string) => void;
   onDeleteInvite: (id: string) => void;
   currentUserEmail: string;
 }
@@ -41,6 +41,7 @@ export default function UserRolesSettings({
   // States for email invitations
   const [inviteEmailInput, setInviteEmailInput] = useState("");
   const [inviteRoleInput, setInviteRoleInput] = useState<string>("Admin");
+  const [invitePasswordInput, setInvitePasswordInput] = useState("");
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState("");
 
@@ -162,10 +163,14 @@ export default function UserRolesSettings({
       return;
     }
     
-    onAddInvite(email, inviteRoleInput);
+    // Default to admin123 if left blank for simulated passwords
+    const assignedPassword = invitePasswordInput.trim() || "admin123";
+    
+    onAddInvite(email, inviteRoleInput, assignedPassword);
     setInviteEmailInput("");
-    setInviteSuccess(`Invite sent successfully to ${email} as ${inviteRoleInput}!`);
-    setTimeout(() => setInviteSuccess(""), 5000);
+    setInvitePasswordInput("");
+    setInviteSuccess(`Invite initiated for ${email} with password: '${assignedPassword}' (${inviteRoleInput})!`);
+    setTimeout(() => setInviteSuccess(""), 6000);
   };
 
   const permissionList: { key: keyof Omit<UserRolePermission, "role" | "label" | "description">; label: string; desc: string }[] = [
@@ -469,7 +474,7 @@ export default function UserRolesSettings({
                   id="invite_role_selector_field"
                   value={inviteRoleInput}
                   onChange={(e) => setInviteRoleInput(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl py-2 px-3 text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
+                  className="w-full bg-white border border-slate-200 rounded-xl py-2 px-3 text-xs font-bold text-slate-700 focus:outline-none cursor-pointer mb-4"
                 >
                   {Object.keys(editedPermissions).map((rk) => (
                     <option key={rk} value={rk}>
@@ -477,6 +482,23 @@ export default function UserRolesSettings({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 pl-1">
+                  Assign Login Password (Optional)
+                </label>
+                <div className="relative">
+                  <input
+                    id="invite_password_input_field"
+                    type="text"
+                    value={invitePasswordInput}
+                    onChange={(e) => setInvitePasswordInput(e.target.value)}
+                    placeholder="Defaults to admin123"
+                    className="w-full bg-white border border-slate-200 rounded-xl py-2 pl-9 pr-3 text-xs font-semibold text-slate-705 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <Lock className="absolute left-3 top-3 text-slate-400" size={13} />
+                </div>
               </div>
 
               <button
@@ -522,6 +544,7 @@ export default function UserRolesSettings({
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-450 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
                         <th className="py-2.5 px-4">Teammate Email</th>
+                        <th className="py-2.5 px-4">Secure Password</th>
                         <th className="py-2.5 px-4">Invited Role</th>
                         <th className="py-2.5 px-4">Invited By</th>
                         <th className="py-2.5 px-3">Date Sent</th>
@@ -540,6 +563,11 @@ export default function UserRolesSettings({
                         return (
                           <tr key={inv.id} className="hover:bg-slate-50/50 transition-all">
                             <td className="py-3 px-4 font-bold text-slate-800">{inv.email}</td>
+                            <td className="py-3 px-4">
+                              <span className="font-mono text-[10.5px] font-extrabold bg-slate-100 text-slate-700 px-2 py-1 rounded border border-slate-200">
+                                {inv.password || "admin123"}
+                              </span>
+                            </td>
                             <td className="py-3 px-4">
                               <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold">
                                 {editedPermissions[inv.role]?.label || inv.role}

@@ -252,13 +252,14 @@ export default function App() {
     await loadAllDatabaseStates();
   };
 
-  const handleAddInvite = async (email: string, roleToInvite: string) => {
+  const handleAddInvite = async (email: string, roleToInvite: string, password?: string) => {
     const newInvite: Invite = {
       id: "inv-" + Math.random().toString(36).substring(2, 9),
       email: email.trim().toLowerCase(),
       role: roleToInvite as any,
       invitedBy: user?.email || "anonymous_sandbox_admin",
       status: "pending",
+      password: password || "admin123",
       createdAt: new Date().toISOString()
     };
     await dataService.saveInvite(newInvite);
