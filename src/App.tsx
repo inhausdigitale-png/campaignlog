@@ -142,23 +142,34 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Load database snapshots
+   // Load database snapshots
   const loadAllDatabaseStates = async () => {
     try {
       setLoading(true);
+      
+      const safeLoad = async <T,>(p: Promise<T>, fallback: T): Promise<T> => {
+        try {
+          const res = await p;
+          return res !== undefined ? res : fallback;
+        } catch (e) {
+          console.warn("Failed to load a specific database partition, fallback applied:", e);
+          return fallback;
+        }
+      };
+
       const [cRes, aRes, lRes, crRes, rRes, comRes, chgRes, pRes, tRes, sRes, perfRes, invRes] = await Promise.all([
-        dataService.getCampaigns(),
-        dataService.getAuditLogs(),
-        dataService.getLeads(),
-        dataService.getCreatives(),
-        dataService.getCampaignReports(),
-        dataService.getMetricComparisons(),
-        dataService.getChangeLogEntries(),
-        dataService.getPortalReports(),
-        dataService.getTargetBudgets(),
-        dataService.getRuleConfiguration(),
-        dataService.getCampaignPerformances(),
-        dataService.getInvites(),
+        safeLoad(dataService.getCampaigns(), []),
+        safeLoad(dataService.getAuditLogs(), []),
+        safeLoad(dataService.getLeads(), []),
+        safeLoad(dataService.getCreatives(), []),
+        safeLoad(dataService.getCampaignReports(), []),
+        safeLoad(dataService.getMetricComparisons(), []),
+        safeLoad(dataService.getChangeLogEntries(), []),
+        safeLoad(dataService.getPortalReports(), []),
+        safeLoad(dataService.getTargetBudgets(), []),
+        safeLoad(dataService.getRuleConfiguration(), null),
+        safeLoad(dataService.getCampaignPerformances(), []),
+        safeLoad(dataService.getInvites(), []),
       ]);
 
       setCampaigns(cRes || []);
@@ -170,7 +181,7 @@ export default function App() {
       setChangeLogEntries(chgRes || []);
       setPortalReports(pRes || []);
       setTargetBudgets(tRes || []);
-      setRuleSetting(sRes || null);
+      setRuleSetting(sRes);
       setCampaignPerformances(perfRes || []);
       setInvites(invRes || []);
     } catch (err) {

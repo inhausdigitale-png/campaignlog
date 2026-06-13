@@ -1425,6 +1425,7 @@ export const dataService = {
   },
 
   async getInvites(): Promise<Invite[]> {
+    let list: Invite[] = [];
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
@@ -1434,22 +1435,45 @@ export const dataService = {
           snapshot.forEach((docRef) => {
             results.push({ id: docRef.id, ...docRef.data() } as Invite);
           });
-          
-          if (results.length === 0) {
-            console.log("[FIREBASE] Seed root administrator credentials...");
-            for (const inv of INITIAL_INVITES) {
-              await setDoc(getDocRef("invites", inv.id), inv);
-            }
-            return INITIAL_INVITES;
-          }
           return results;
         })();
-        return await withTimeout(fetchPromise, loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES));
+        const cloudList = await withTimeout(fetchPromise, []);
+        if (cloudList && cloudList.length > 0) {
+          list = cloudList;
+        } else {
+          list = loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES);
+        }
       } catch (err) {
         console.error("Firestore getInvites error, continuing with local fallback:", err);
+        list = loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES);
+      }
+    } else {
+      list = loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES);
+    }
+
+    // Secure sync fallback: Ensure INITIAL_INVITES are ALWAYS present in the returned list.
+    // If any seed account is missing, inject it so that login is 100% bulletproof for the user under any environment state.
+    let changed = false;
+    for (const seed of INITIAL_INVITES) {
+      if (!list.some(inv => inv.email.toLowerCase() === seed.email.toLowerCase())) {
+        list.push(seed);
+        changed = true;
       }
     }
-    return loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES);
+
+    if (changed) {
+      saveLocal(KEYS.INVITES, list);
+      if (isFirebaseEnabled) {
+        // Sync back to cloud in background if possible
+        for (const seed of INITIAL_INVITES) {
+          try {
+            setDoc(getDocRef("invites", seed.id), seed);
+          } catch (_) {}
+        }
+      }
+    }
+
+    return list;
   },
 
   async saveInvite(invite: Invite): Promise<Invite> {
