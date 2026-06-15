@@ -590,23 +590,40 @@ export const dataService = {
   },
 
   async clearAllCampaigns(): Promise<boolean> {
-    // 1. Local Cache
+    // 1. Local Cache - Purge everything to avoid mapped campaign regenerations
     saveLocal(KEYS.CAMPAIGNS, []);
     saveLocal(KEYS.AUDIT_LOGS, []);
+    saveLocal(KEYS.PORTAL_LEADS, []);
+    saveLocal(KEYS.CREATIVES, []);
+    saveLocal(KEYS.REPORTS, []);
+    saveLocal(KEYS.COMPARISONS, []);
+    saveLocal(KEYS.CHANGE_LOGS, []);
+    saveLocal(KEYS.PORTAL_REPORTS, []);
+    saveLocal(KEYS.TARGET_BUDGETS, []);
+    saveLocal(KEYS.PERF_TRACKERS, []);
 
     // 2. Cloud Sync
     if (isFirebaseEnabled) {
       try {
-        const q = query(getCollectionRef("campaigns"));
-        const snapshot = await getDocs(q);
-        for (const docSnap of snapshot.docs) {
-          await deleteDoc(getDocRef("campaigns", docSnap.id));
-        }
+        const collectionsToPurge = [
+          "campaigns",
+          "audit_logs",
+          "portal_leads",
+          "creative_performance",
+          "campaign_reports",
+          "metric_comparisons",
+          "change_log_entries",
+          "portal_reports",
+          "target_budgets",
+          "campaign_performances"
+        ];
 
-        const qLogs = query(getCollectionRef("audit_logs"));
-        const logSnapshot = await getDocs(qLogs);
-        for (const docSnap of logSnapshot.docs) {
-          await deleteDoc(getDocRef("audit_logs", docSnap.id));
+        for (const colName of collectionsToPurge) {
+          const q = query(getCollectionRef(colName));
+          const snapshot = await getDocs(q);
+          for (const docSnap of snapshot.docs) {
+            await deleteDoc(getDocRef(colName, docSnap.id));
+          }
         }
       } catch (err) {
         console.error("[FIREBASE] clearAllCampaigns Firestore sync failed:", err);
