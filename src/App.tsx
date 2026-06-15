@@ -970,48 +970,11 @@ export default function App() {
               )}
               {activeTab === "portals" && (
                 <div className="space-y-6 animate-fade-in" id="portal-leads-module-container">
-                  {/* Outer Premium Nav Sub-Tabs inside Portal Leads View */}
-                  <div className="bg-white border border-slate-200/85 p-1 rounded-xl shadow-xs flex select-none max-w-2xl">
-                    <button
-                      type="button"
-                      onClick={() => setPortalSubTab("pivot")}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        portalSubTab === "pivot"
-                          ? "bg-indigo-650 text-white shadow-sm bg-indigo-600"
-                          : "text-slate-500 hover:text-slate-800 hover:bg-slate-50/70"
-                      }`}
-                    >
-                      <TrendingUp size={14} />
-                      <span>Daily Site Visits (SVC) Matrix</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPortalSubTab("database")}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        portalSubTab === "database"
-                          ? "bg-indigo-650 text-white shadow-sm bg-indigo-600"
-                          : "text-slate-500 hover:text-slate-800 hover:bg-slate-50/70"
-                      }`}
-                    >
-                      <Database size={14} />
-                      <span>Profile Database (CSV Import Option)</span>
-                    </button>
-                  </div>
-
-                  {portalSubTab === "pivot" ? (
-                    <PortalReportModule
-                      portalReports={portalReports}
-                      onSaveReport={handleSavePortalReport}
-                      onDeleteReport={handleDeletePortalReport}
-                    />
-                  ) : (
-                    <LeadPortal
-                      leads={leads}
-                      campaigns={mergedCampaigns}
-                      onSaveLead={handleSaveLead}
-                      onDeleteLead={handleDeleteLead}
-                    />
-                  )}
+                  <PortalReportModule
+                    portalReports={portalReports}
+                    onSaveReport={handleSavePortalReport}
+                    onDeleteReport={handleDeletePortalReport}
+                  />
                 </div>
               )}
               {activeTab === "targets" && (

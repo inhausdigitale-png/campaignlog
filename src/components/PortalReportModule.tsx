@@ -1,7 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { PortalReportRow } from "../types";
 import { auth } from "../firebase";
 import * as XLSX from "xlsx";
+import {
+  authorizeGoogleWorkspace,
+  getCachedAccessToken,
+  getWorkspaceProfile,
+  clearWorkspaceAuth,
+  checkGoogleTokenStatus,
+  fetchSpreadsheetsFromDrive,
+  fetchSpreadsheetTabs,
+  fetchSpreadsheetRows
+} from "../services/googleService";
 import {
   Plus,
   Trash2,
@@ -21,7 +31,19 @@ import {
   Edit2,
   FileSpreadsheet,
   Upload,
-  AlertCircle
+  AlertCircle,
+  RefreshCw,
+  Search,
+  ArrowRight,
+  LogOut,
+  Sparkles,
+  ShieldAlert,
+  HardDrive,
+  Check,
+  Columns,
+  Link,
+  UploadCloud,
+  AlertTriangle
 } from "lucide-react";
 
 interface PortalReportModuleProps {
@@ -47,6 +69,254 @@ export default function PortalReportModule({
   const [fileName, setFileName] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
+
+  // Source Selection (Offline Excel file vs Cloud Google Sheets)
+  const [sourceType, setSourceType] = useState<"offline" | "google">("offline");
+
+  // Google Authentication variables
+  const [authorized, setAuthorized] = useState<boolean>(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [profile, setProfile] = useState<{ email: string | null; name: string | null; photoUrl: string | null } | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authenticating, setAuthenticating] = useState<boolean>(false);
+
+  // Google Spreadsheet States
+  const [files, setFiles] = useState<Array<{ id: string; name: string; modifiedTime: string }>>([]);
+  const [fileSearch, setFileSearch] = useState<string>("");
+  const [loadingFiles, setLoadingFiles] = useState<boolean>(false);
+  const [driveError, setDriveError] = useState<string | null>(null);
+
+  // Chosen Spreadsheet & worksheets/tabs
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string>("");
+  const [tabs, setTabs] = useState<string[]>([]);
+  const [selectedTab, setSelectedTab] = useState<string>("");
+  const [loadingTabs, setLoadingTabs] = useState<boolean>(false);
+
+  // Raw rows loaded from Sheet
+  const [rawRows, setRawRows] = useState<string[][]>([]);
+  const [loadingRows, setLoadingRows] = useState<boolean>(false);
+  const [rowsError, setRowsError] = useState<string | null>(null);
+
+  // Column headers in sheet row
+  const [headers, setHeaders] = useState<string[]>([]);
+  // Manual Column mapping dictionary (e.g., date -> col index, project -> col index, etc.)
+  const [columnMapping, setColumnMapping] = useState<Record<string, number>>({});
+
+  // Auto-load token on mount
+  useEffect(() => {
+    const activeToken = getCachedAccessToken();
+    if (activeToken) {
+      setAuthToken(activeToken);
+      setAuthorized(true);
+      setProfile(getWorkspaceProfile());
+      loadDriveFiles(activeToken);
+    }
+  }, []);
+
+  const loadDriveFiles = async (token: string) => {
+    setLoadingFiles(true);
+    setDriveError(null);
+    try {
+      const spreadsheets = await fetchSpreadsheetsFromDrive(token);
+      setFiles(spreadsheets);
+    } catch (err: any) {
+      console.error(err);
+      setDriveError(err.message || "Failed retrieving spreadsheets list from Google Drive.");
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  const handleConnectGoogle = async () => {
+    setAuthenticating(true);
+    setAuthError(null);
+    try {
+      const data = await authorizeGoogleWorkspace();
+      if (data) {
+        setAuthToken(data.accessToken);
+        setAuthorized(true);
+        setProfile({
+          email: data.email,
+          name: data.name,
+          photoUrl: data.photoUrl
+        });
+        loadDriveFiles(data.accessToken);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setAuthError(err.message || "Sign-in popup rejected or access denied.");
+    } finally {
+      setAuthenticating(false);
+    }
+  };
+
+  const handleDisconnectGoogle = () => {
+    clearWorkspaceAuth();
+    setAuthToken(null);
+    setAuthorized(false);
+    setProfile(null);
+    setFiles([]);
+    setSelectedFileId(null);
+    setSelectedFileName("");
+    setTabs([]);
+    setSelectedTab("");
+    setRawRows([]);
+    setHeaders([]);
+    setColumnMapping({});
+    setParsedRows([]);
+  };
+
+  const handleSelectSpreadsheet = async (fileId: string, fileName: string) => {
+    setSelectedFileId(fileId);
+    setSelectedFileName(fileName);
+    setLoadingTabs(true);
+    setRowsError(null);
+    setTabs([]);
+    setSelectedTab("");
+    setRawRows([]);
+    setHeaders([]);
+    setColumnMapping({});
+    setParsedRows([]);
+    
+    try {
+      if (authToken) {
+        const parsedTabs = await fetchSpreadsheetTabs(authToken, fileId);
+        setTabs(parsedTabs);
+        if (parsedTabs.length > 0) {
+          handleSelectTab(fileId, parsedTabs[0]);
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      setRowsError(err.message || "Failed loading sub-sheets/tabs.");
+    } finally {
+      setLoadingTabs(false);
+    }
+  };
+
+  const handleSelectTab = async (fileId: string, tabName: string) => {
+    setSelectedTab(tabName);
+    setLoadingRows(true);
+    setRowsError(null);
+    setRawRows([]);
+    setHeaders([]);
+    setParsedRows([]);
+    
+    try {
+      if (authToken) {
+        const rows = await fetchSpreadsheetRows(authToken, fileId, tabName);
+        setRawRows(rows);
+        if (rows.length > 0) {
+          const extractedHeaders = rows[0].map(h => String(h || "").trim());
+          setHeaders(extractedHeaders);
+          
+          const dateIdx = findHeaderIndex(extractedHeaders, ["date", "configuration date", "day"]);
+          const projIdx = findHeaderIndex(extractedHeaders, ["project", "project name", "project trace", "property"]);
+          const portalIdx = findHeaderIndex(extractedHeaders, ["portal", "portal name", "source", "platform"]);
+          const genIdx = findHeaderIndex(extractedHeaders, ["generated leads", "leads generated", "generated", "leads", "lead count"]);
+          const svcIdx = findHeaderIndex(extractedHeaders, ["svc", "site visits conducted", "conducted site visits", "conducted", "site visits", "site visits conducted", "svc conducted"]);
+          const reasonIdx = findHeaderIndex(extractedHeaders, ["edit reason", "reason", "modification reason", "comment", "remarks"]);
+          
+          const mapping: Record<string, number> = {};
+          if (dateIdx !== -1) mapping.date = dateIdx;
+          if (projIdx !== -1) mapping.project = projIdx;
+          if (portalIdx !== -1) mapping.portal = portalIdx;
+          if (genIdx !== -1) mapping.leads = genIdx;
+          if (svcIdx !== -1) mapping.svc = svcIdx;
+          if (reasonIdx !== -1) mapping.reason = reasonIdx;
+          
+          setColumnMapping(mapping);
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      setRowsError(err.message || "Failed retrieving rows array inside chosen worksheet.");
+    } finally {
+      setLoadingRows(false);
+    }
+  };
+
+  // Google Sheets rawRow-to-parsedRows mapper side-effect
+  useEffect(() => {
+    if (sourceType !== "google" || rawRows.length < 2) {
+      return;
+    }
+    
+    const dateIdx = columnMapping.date;
+    const projIdx = columnMapping.project;
+    const portalIdx = columnMapping.portal;
+    const genIdx = columnMapping.leads;
+    const svcIdx = columnMapping.svc;
+    const reasonIdx = columnMapping.reason;
+    
+    if (dateIdx === undefined || projIdx === undefined || portalIdx === undefined) {
+      setParsedRows([]);
+      return;
+    }
+    
+    const rowsToPreview: any[] = [];
+    for (let i = 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      if (!row || row.length === 0) continue;
+      
+      const isAllEmpty = row.every((val: any) => val === undefined || val === null || String(val).trim() === "");
+      if (isAllEmpty) continue;
+      
+      const rowDateRaw = String(row[dateIdx] || "").trim();
+      let rowDate = rowDateRaw;
+      
+      if (/^\d+(\.\d+)?$/.test(rowDateRaw)) {
+        const serial = parseFloat(rowDateRaw);
+        const dateObj = new Date((serial - 25569) * 86400 * 1000);
+        if (!isNaN(dateObj.getTime())) {
+          rowDate = dateObj.toISOString().split("T")[0];
+        }
+      } else {
+        const parts = rowDateRaw.split(/[-/]/);
+        if (parts.length === 3) {
+          if (parts[0].length === 4) {
+            rowDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+          } else if (parts[2].length === 4) {
+            rowDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        }
+      }
+      
+      if (!rowDate) {
+        rowDate = new Date().toISOString().split("T")[0];
+      }
+      
+      const project = projIdx !== undefined && row[projIdx] ? String(row[projIdx]).trim() : "Skyline Residency";
+      const portalRaw = portalIdx !== undefined && row[portalIdx] ? String(row[portalIdx]).trim() : "Housing";
+      
+      let portal = portalRaw;
+      const pLower = portalRaw.toLowerCase();
+      if (pLower.includes("housing")) portal = "Housing";
+      else if (pLower.includes("99") || pLower.includes("acres")) portal = "99 Acres";
+      else if (pLower.includes("magic") || pLower.includes("brick")) portal = "Magicbricks";
+      else if (pLower.includes("roof") || pLower.includes("floor") || pLower.includes("rf")) portal = "Roof&floor";
+      
+      const generated = genIdx !== undefined ? parseInt(String(row[genIdx])) || 0 : 0;
+      const svc = svcIdx !== undefined ? parseInt(String(row[svcIdx])) || 0 : 0;
+      const editReason = reasonIdx !== undefined && row[reasonIdx] ? String(row[reasonIdx]).trim() : "Google Sheet Sync";
+      
+      rowsToPreview.push({
+        date: rowDate,
+        project,
+        portal,
+        generated,
+        svs: svc,
+        svc,
+        walkin: 0,
+        gross: 0,
+        net: 0,
+        editReason
+      });
+    }
+    
+    setParsedRows(rowsToPreview);
+  }, [columnMapping, rawRows, sourceType]);
 
   // Expanded row details for history/reasons
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
@@ -581,8 +851,8 @@ export default function PortalReportModule({
             }`}
             type="button"
           >
-            <FileSpreadsheet size={14} className="text-indigo-650" />
-            <span>Bulk Upload Portal Data</span>
+            <Globe size={14} className="text-indigo-650" />
+            <span>Browse &amp; Sync Marketing Data</span>
           </button>
           <button
             onClick={handleOpenAdd}
@@ -595,84 +865,257 @@ export default function PortalReportModule({
         </div>
       </div>
 
+      {/* SUMMARY DASHBOARD CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5" id="portal-dashboard-summary-cards">
+        {/* Card 1: Portals */}
+        <div className="bg-gradient-to-br from-indigo-500/5 to-indigo-650/10 border border-indigo-150 rounded-2xl p-4 flex items-center gap-4 shadow-xs">
+          <div className="p-3.5 bg-indigo-50 text-indigo-750 rounded-xl">
+            <Globe size={22} className="text-indigo-600" />
+          </div>
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-450 font-display">Active Channels Reporting</span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-2xl font-bold text-slate-800 tracking-tight font-mono">4</span>
+              <span className="text-xs text-indigo-700 font-bold bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded">Core Portals</span>
+            </div>
+            <p className="text-[10.5px] text-slate-500 mt-1 font-sans">Housing, 99 Acres, Magicbricks, Roof&amp;Floor</p>
+          </div>
+        </div>
+
+        {/* Card 2: Total Leads */}
+        <div className="bg-gradient-to-br from-amber-500/5 to-amber-600/10 border border-amber-150 rounded-2xl p-4 flex items-center gap-4 shadow-xs">
+          <div className="p-3.5 bg-amber-50 text-amber-700 rounded-xl">
+            <TrendingUp size={22} className="text-amber-650" />
+          </div>
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-450 font-display">Aggregate Monthly Leads</span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-2xl font-bold text-slate-900 tracking-tight font-mono">{totalOverallLeads}</span>
+              <span className="text-[10px] text-amber-850 font-extrabold uppercase">Leads</span>
+            </div>
+            <p className="text-[10.5px] text-slate-500 mt-1 font-sans">Generated from organic digital property listings.</p>
+          </div>
+        </div>
+
+        {/* Card 3: Conducted site visits (SVC) */}
+        <div className="bg-gradient-to-br from-violet-500/5 to-violet-650/10 border border-violet-150 rounded-2xl p-4 flex items-center gap-4 shadow-xs">
+          <div className="p-3.5 bg-violet-50 text-violet-750 rounded-xl">
+            <CheckCircle2 size={22} className="text-violet-650" />
+          </div>
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-450 font-display">Conducted Site Visits (SVC)</span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-2xl font-bold text-slate-900 tracking-tight font-mono">{totalOverallSvc}</span>
+              <span className="text-[10px] text-violet-850 font-extrabold uppercase">SVC</span>
+            </div>
+            <p className="text-[10.5px] text-slate-500 mt-1 font-sans">Physical customer site tours verified by sales.</p>
+          </div>
+        </div>
+      </div>
+
       {showBulkUploadSection && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 animate-fade-in" id="portal-bulk-upload-card">
           <div className="flex justify-between items-center pb-3 border-b border-slate-100">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Bulk Upload Spreadsheet (Excel / CSV)</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Upload a daily portal performance ledger with respective fields to sync directly.</p>
+              <h3 className="text-sm font-bold text-slate-900">Sync Portal Performance Ledger</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Upload a manual file or connect your Google Workspace environment to sync live marketing data.</p>
             </div>
             <button
               onClick={() => setShowBulkUploadSection(false)}
-              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              className="text-slate-400 hover:text-slate-650 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <X size={15} />
             </button>
           </div>
 
+          {/* SOURCE TABS switcher */}
+          <div className="flex border border-slate-200 p-1 bg-slate-50 rounded-xl max-w-md">
+            <button
+              type="button"
+              onClick={() => {
+                setSourceType("offline");
+                setUploadError(null);
+                setUploadSuccessMessage(null);
+              }}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                sourceType === "offline"
+                  ? "bg-white text-indigo-705 shadow-2s border border-slate-200"
+                  : "text-slate-500 hover:text-slate-805"
+              }`}
+            >
+              <Upload size={13} />
+              <span>Offline Excel/CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSourceType("google");
+                setUploadError(null);
+                setUploadSuccessMessage(null);
+              }}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                sourceType === "google"
+                  ? "bg-white text-indigo-705 shadow-2s border border-slate-200"
+                  : "text-slate-500 hover:text-slate-855"
+              }`}
+            >
+              <Globe size={13} className="text-emerald-555" />
+              <span>Browse &amp; Sync Google Sheets</span>
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-1 space-y-4">
-              <div
-                className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[160px] ${
-                  isDragOver
-                    ? "border-indigo-500 bg-indigo-50/30 text-indigo-705"
-                    : "border-slate-250 bg-slate-50/50 hover:bg-slate-50 text-slate-600"
-                }`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragOver(true);
-                }}
-                onDragLeave={() => setIsDragOver(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDragOver(false);
-                  const file = e.dataTransfer.files?.[0];
-                  if (file) handleFileImport(file);
-                }}
-                onClick={() => document.getElementById("portal-spreadsheet-file-picker")?.click()}
-              >
-                <input
-                  id="portal-spreadsheet-file-picker"
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
+            {sourceType === "google" ? (
+              <div className="md:col-span-1 space-y-4">
+                {/* Connection Box */}
+                {!authorized ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 text-center space-y-3.5 shadow-2xs flex flex-col items-center justify-center min-h-[160px]">
+                    <Globe className="text-slate-400 animate-pulse" size={28} />
+                    <div>
+                      <p className="text-xs font-bold text-slate-850">Authorization Required</p>
+                      <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">Connect your Google account safely to browse and select marketing sheets.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleConnectGoogle}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Upload size={13} />
+                      <span>Authenticate Google Account</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3.5 shadow-2xs">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span className="text-[10px] font-extrabold uppercase text-slate-500 font-mono">Google Live Connected</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleDisconnectGoogle}
+                        className="text-[9px] text-rose-600 hover:underline font-bold"
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+
+                    {/* Spreadsheet selector */}
+                    <div className="space-y-1.5 text-xs">
+                      <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">1. Select Google Spreadsheet</label>
+                      <select
+                        value={selectedFileId || ""}
+                        onChange={(e) => {
+                          const fileId = e.target.value;
+                          const found = files.find(f => f.id === fileId);
+                          handleSelectSpreadsheet(fileId, found ? found.name : "");
+                        }}
+                        className="w-full p-2 bg-slate-50 border border-slate-250 rounded-lg text-slate-705 outline-hidden font-bold cursor-pointer hover:bg-slate-100/50"
+                      >
+                        <option value="">-- Choose Marketing Spreadsheet --</option>
+                        {files.map((sheet) => (
+                          <option key={sheet.id} value={sheet.id}>
+                            {sheet.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Tab Selection */}
+                    {selectedFileId && (
+                      <div className="space-y-1.5 text-xs animate-slide-up">
+                        <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">2. Choose Sheet Tab</label>
+                        <select
+                          value={selectedTab}
+                          onChange={(e) => handleSelectTab(selectedFileId, e.target.value)}
+                          className="w-full p-2 bg-slate-50 border border-slate-250 rounded-lg text-slate-705 outline-hidden font-bold cursor-pointer hover:bg-slate-100/50"
+                        >
+                          <option value="">-- Choose Sheet Tab/Page --</option>
+                          {tabs.map((tab) => (
+                            <option key={tab} value={tab}>
+                              {tab}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="bg-emerald-50/45 border border-emerald-150 rounded-xl p-4 space-y-2 text-xs">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1 font-mono">
+                    <History size={12} className="text-emerald-600" />
+                    Bimodal Auto Mapping
+                  </span>
+                  <p className="text-slate-600 leading-relaxed text-[11px]">
+                    Google sync maps column fields (Date, Project, Portal, Leads, SVC) and lists data preview instantly in the next window pane for quick human approval before database record commits.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="md:col-span-1 space-y-4">
+                <div
+                  className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[160px] ${
+                    isDragOver
+                      ? "border-indigo-500 bg-indigo-50/30 text-indigo-705"
+                      : "border-slate-250 bg-slate-50/50 hover:bg-slate-50 text-slate-600"
+                  }`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragOver(true);
+                  }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragOver(false);
+                    const file = e.dataTransfer.files?.[0];
                     if (file) handleFileImport(file);
                   }}
-                />
-                <Upload size={32} className={`mb-3 ${isDragOver ? "text-indigo-600 animate-bounce" : "text-slate-400"}`} />
-                <p className="text-xs font-bold text-slate-705">
-                  {fileName ? "Selected:" : "Drag & drop file here, or"} <span className="text-indigo-650 underline">browse</span>
-                </p>
-                <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
-                  Supports .xlsx, .xls, .csv
-                </p>
-                {fileName && (
-                  <span className="mt-2 text-[11px] font-mono font-bold text-slate-800 bg-white px-2 py-0.5 border border-slate-200 rounded">
-                    {fileName}
-                  </span>
-                )}
-              </div>
-
-              <div className="bg-amber-50/40 border border-amber-100 rounded-xl p-4 space-y-2 text-xs">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 flex items-center gap-1 font-mono">
-                  <Info size={12} className="text-amber-600" />
-                  Required spreadsheet columns
-                </span>
-                <p className="text-slate-600 leading-relaxed text-[11px]">
-                  The uploaded spreadsheet should contain headers matching: <strong className="text-slate-800 font-bold">Date</strong>, <strong className="text-slate-800 font-bold">Project</strong>, <strong className="text-slate-800 font-bold">Portal Name</strong>, and numeric metric values for <strong className="text-slate-850">Leads</strong> and <strong className="text-indigo-700">SVC/Site Visits</strong>.
-                </p>
-                <button
-                  onClick={downloadPortalTemplate}
-                  type="button"
-                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 pt-1 cursor-pointer"
+                  onClick={() => document.getElementById("portal-spreadsheet-file-picker")?.click()}
                 >
-                  <Download size={11} />
-                  <span>Download Sample template</span>
-                </button>
+                  <input
+                    id="portal-spreadsheet-file-picker"
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileImport(file);
+                    }}
+                  />
+                  <Upload size={32} className={`mb-3 ${isDragOver ? "text-indigo-600 animate-bounce" : "text-slate-400"}`} />
+                  <p className="text-xs font-bold text-slate-705">
+                    {fileName ? "Selected:" : "Drag & drop file here, or"} <span className="text-indigo-650 underline">browse</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
+                    Supports .xlsx, .xls, .csv
+                  </p>
+                  {fileName && (
+                    <span className="mt-2 text-[11px] font-mono font-bold text-slate-800 bg-white px-2 py-0.5 border border-slate-200 rounded">
+                      {fileName}
+                    </span>
+                  )}
+                </div>
+
+                <div className="bg-amber-50/40 border border-amber-100 rounded-xl p-4 space-y-2 text-xs">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 flex items-center gap-1 font-mono">
+                    <Info size={12} className="text-amber-600" />
+                    Required spreadsheet columns
+                  </span>
+                  <p className="text-slate-600 leading-relaxed text-[11px]">
+                    The uploaded spreadsheet should contain headers matching: <strong className="text-slate-800 font-bold">Date</strong>, <strong className="text-slate-800 font-bold">Project</strong>, <strong className="text-slate-800 font-bold">Portal Name</strong>, and numeric metric values for <strong className="text-slate-850">Leads</strong> and <strong className="text-indigo-700">SVC/Site Visits</strong>.
+                  </p>
+                  <button
+                    onClick={downloadPortalTemplate}
+                    type="button"
+                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 pt-1 cursor-pointer"
+                  >
+                    <Download size={11} />
+                    <span>Download Sample template</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="md:col-span-2 space-y-4">
               {uploadError && (
@@ -886,79 +1329,80 @@ export default function PortalReportModule({
               No matching portal performance chronologies found for selected filters.
             </div>
           ) : (
-            <table className="w-full text-left border-collapse border-spacing-0 table-fixed min-w-[900px] text-xs">
+            <table className="w-full text-left border-collapse border-spacing-0 min-w-[1000px] text-xs">
               <thead>
                 {/* Level 1 Headers */}
-                <tr className="text-[11px] text-slate-800 font-extrabold uppercase select-none">
-                  <th className="p-3 text-center border-r border-slate-150 w-[120px]" style={{ backgroundColor: "#e48a7d" }}>Date</th>
+                <tr className="text-[11px] text-slate-850 font-extrabold uppercase select-none">
+                  <th rowSpan={2} className="p-3 text-center border-r border-slate-150 w-[120px] bg-[#fcd5ce] text-slate-800">Date</th>
+                  <th rowSpan={2} className="p-3 text-center border-r border-slate-150 w-[130px] bg-[#fbdbce] text-slate-800 font-sans">Project Trace</th>
                   
                   {/* Housing Primary Header */}
                   {(filterPortal === "all" || filterPortal === "Housing") && (
-                    <th className="p-2.5 text-center border-r border-slate-150" style={{ backgroundColor: "#ffde59" }}>Housing</th>
+                    <th colSpan={2} className="p-2.5 text-center border-r border-slate-150 bg-[#ffde59] text-amber-950">Housing</th>
                   )}
 
                   {/* 99 Acres Primary Header */}
                   {(filterPortal === "all" || filterPortal === "99 Acres") && (
-                    <th className="p-2.5 text-center border-r border-slate-150" style={{ backgroundColor: "#ffea79" }}>99 Acres</th>
+                    <th colSpan={2} className="p-2.5 text-center border-r border-slate-150 bg-[#ffea79] text-amber-950">99 Acres</th>
                   )}
 
                   {/* Magicbricks Primary Header */}
                   {(filterPortal === "all" || filterPortal === "Magicbricks") && (
-                    <th className="p-2.5 text-center border-r border-slate-150" style={{ backgroundColor: "#f7b447" }}>Magicbricks</th>
+                    <th colSpan={2} className="p-2.5 text-center border-r border-slate-150 bg-[#f7b447] text-orange-950">Magicbricks</th>
                   )}
 
                   {/* Roof&floor Primary Header */}
                   {(filterPortal === "all" || filterPortal === "Roof&floor") && (
-                    <th className="p-2.5 text-center border-r border-slate-150" style={{ backgroundColor: "#ff934e" }}>Roof&floor</th>
+                    <th colSpan={2} className="p-2.5 text-center border-r border-slate-150 bg-[#ff934e] text-rose-950">Roof &amp; Floor</th>
                   )}
 
                   {/* Total Primary Header */}
-                  <th className="p-2.5 text-center" style={{ backgroundColor: "#a29ce4" }}>Total</th>
+                  <th colSpan={2} className="p-2.5 text-center bg-[#a29ce4] text-violet-950">Total</th>
                 </tr>
 
                 {/* Level 2 Sub-Headers */}
-                <tr className="bg-slate-50 text-[10px] text-slate-400 font-bold uppercase border-b border-slate-150 border-t border-slate-150">
-                  <th className="p-2 text-center border-r border-slate-150">Project Trace</th>
+                <tr className="bg-slate-50 text-[10px] text-slate-400 font-bold uppercase border-b border-slate-150">
+                  {/* Date and Project are spanned from above, so only render sub-headers for active portals */}
                   
                   {/* Housing Sub Headers */}
                   {(filterPortal === "all" || filterPortal === "Housing") && (
                     <>
-                      <th className="p-2 text-center bg-[#fff8db] border-r border-slate-150 text-slate-650">Leads</th>
-                      <th className="p-2 text-center bg-[#fffbf0] border-r border-slate-150 text-slate-650">SVC</th>
+                      <th className="p-2 text-center bg-[#fffbf0] border-r border-slate-150 text-slate-650">Leads</th>
+                      <th className="p-2 text-center bg-[#fff8eb] border-r border-slate-150 text-slate-650">SVC</th>
                     </>
                   )}
 
                   {/* 99 Acres Sub Headers */}
                   {(filterPortal === "all" || filterPortal === "99 Acres") && (
                     <>
-                      <th className="p-2 text-center bg-[#fffdf0] border-r border-slate-150 text-slate-650">Leads</th>
-                      <th className="p-2 text-center bg-[#fffdf5] border-r border-slate-150 text-slate-650">SVC</th>
+                      <th className="p-2 text-center bg-[#fffdf5] border-r border-slate-150 text-slate-650">Leads</th>
+                      <th className="p-2 text-center bg-[#fffdf0] border-r border-slate-150 text-slate-650">SVC</th>
                     </>
                   )}
 
                   {/* Magicbricks Sub Headers */}
                   {(filterPortal === "all" || filterPortal === "Magicbricks") && (
                     <>
-                      <th className="p-2 text-center bg-[#fff6eb] border-r border-slate-150 text-slate-650">Leads</th>
-                      <th className="p-2 text-center bg-[#fffaeb] border-r border-slate-150 text-slate-650">SVC</th>
+                      <th className="p-2 text-center bg-[#fffbe6] border-r border-slate-150 text-slate-650">Leads</th>
+                      <th className="p-2 text-center bg-[#fffae0] border-r border-slate-150 text-slate-650">SVC</th>
                     </>
                   )}
 
                   {/* Roof&floor Sub Headers */}
                   {(filterPortal === "all" || filterPortal === "Roof&floor") && (
                     <>
-                      <th className="p-2 text-center bg-[#fff3ec] border-r border-slate-150 text-slate-650">Leads</th>
-                      <th className="p-2 text-center bg-[#fffaf5] border-r border-slate-150 text-slate-650">SVC</th>
+                      <th className="p-2 text-center bg-[#fff5f0] border-r border-slate-150 text-slate-650">Leads</th>
+                      <th className="p-2 text-center bg-[#fff0e6] border-r border-slate-150 text-slate-650">SVC</th>
                     </>
                   )}
 
                   {/* Total Sub Headers */}
-                  <th className="p-2 text-center bg-violet-50 border-r border-slate-150 text-slate-650">Leads</th>
-                  <th className="p-2 text-center bg-violet-50/50 text-slate-650">SVC</th>
+                  <th className="p-2 text-center bg-violet-50/70 border-r border-slate-150 text-slate-650">Leads</th>
+                  <th className="p-2 text-center bg-violet-50/70 text-slate-650">SVC</th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-150 font-medium text-slate-700">
+              <tbody className="divide-y divide-slate-150 font-medium text-slate-705">
                 {sortedPivotedRows.map((row) => {
                   const housingRowLeads = row.Housing?.leads || 0;
                   const housingRowSvc = row.Housing?.svc || 0;
@@ -982,12 +1426,17 @@ export default function PortalReportModule({
                         className={`hover:bg-slate-50/80 transition-all cursor-pointer select-none group ${isExpanded ? "bg-slate-50/70 font-semibold text-slate-900" : ""}`}
                         onClick={() => setExpandedDate(isExpanded ? null : row.date)}
                       >
-                        {/* Date Cell */}
-                        <td className="p-3 border-r border-slate-15 w-[140px] font-mono text-center text-slate-600 font-bold">
-                          <div className="flex items-center justify-between">
+                        {/* 1. Date Cell */}
+                        <td className="p-3 border-r border-slate-150 font-mono text-center text-slate-600 font-bold whitespace-nowrap">
+                          <div className="flex items-center justify-between gap-1">
                             <span className="text-slate-800">{formatDisplayDate(row.date)}</span>
                             <Info size={11} className="text-slate-400 group-hover:text-amber-500 opacity-60 group-hover:opacity-100 transition-all" title="Click to view change log" />
                           </div>
+                        </td>
+
+                        {/* 2. Project Name Cell */}
+                        <td className="p-3 border-r border-slate-150 font-sans text-left text-slate-700 font-semibold truncate max-w-[130px]" title={row.project}>
+                          {row.project}
                         </td>
 
                         {/* Housing Metrics Cells */}
@@ -1052,7 +1501,7 @@ export default function PortalReportModule({
                       {/* EXPANDABLE PORTAL REASON LOGS DETAILS */}
                       {isExpanded && (
                         <tr className="bg-slate-50/60" id={`expanded-panel-${row.date}`}>
-                          <td colSpan={13} className="p-3 border-t border-b border-indigo-100/60">
+                          <td colSpan={14} className="p-3 border-t border-b border-indigo-100/60">
                             <div className="space-y-3">
                               <div className="flex items-center justify-between border-b border-indigo-100/40 pb-1.5">
                                 <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wide">
@@ -1112,6 +1561,11 @@ export default function PortalReportModule({
                   {/* Date range duration label (e.g. 01 May - 03 May) */}
                   <td className="p-3 border-r border-slate-150 align-middle text-slate-800 text-[11px] font-extrabold font-sans">
                     {durationLabel}
+                  </td>
+
+                  {/* Project overall summary cell label */}
+                  <td className="p-3 border-r border-slate-150 align-middle text-slate-650 text-[10px] font-bold uppercase tracking-tight text-center bg-[#fbdbce]/30">
+                    All Projects
                   </td>
 
                   {/* Housing sum rows */}
