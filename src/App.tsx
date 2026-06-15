@@ -467,6 +467,11 @@ export default function App() {
     await loadAllDatabaseStates();
   };
 
+  const handleClearAllCampaigns = async () => {
+    await dataService.clearAllCampaigns();
+    await loadAllDatabaseStates();
+  };
+
   // Action: Target Budget CRUD
   const handleSaveTargetBudget = async (row: TargetBudgetRow) => {
     await dataService.saveTargetBudget(row);
@@ -948,6 +953,8 @@ export default function App() {
                   comparisons={metricComparisons}
                   onSaveComparison={handleSaveMetricComparison}
                   onDeleteComparison={handleDeleteMetricComparison}
+                  rolePermission={currentRolePermission}
+                  onClearAllCampaigns={handleClearAllCampaigns}
                 />
               )}
               {activeTab === "creatives" && (

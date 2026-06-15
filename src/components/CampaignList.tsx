@@ -45,6 +45,7 @@ interface CampaignListProps {
   onSaveComparison?: (comp: MetricComparison) => Promise<void>;
   onDeleteComparison?: (id: string) => Promise<void>;
   onDeleteChangeLog?: (id: string) => Promise<void>;
+  onClearAllCampaigns?: () => Promise<void>;
 }
 
 export default function CampaignList({
@@ -58,6 +59,7 @@ export default function CampaignList({
   comparisons = [],
   onSaveComparison,
   onDeleteComparison,
+  onClearAllCampaigns,
   rolePermission = {
     role: "Admin",
     label: "Super Admin",
@@ -125,6 +127,20 @@ export default function CampaignList({
   // Modern modal state management
   const [showModal, setShowModal] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+
+  // Custom dialog states for confirmations and alerts inside iframes
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const [feedbackAlert, setFeedbackAlert] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  } | null>(null);
 
   // Form Fields State
   const [formName, setFormName] = useState("");
@@ -488,6 +504,34 @@ export default function CampaignList({
       };
       await onSaveChangeLog(updated);
     }
+  };
+
+  const handleClearCampaignsWithConfirmation = () => {
+    if (!onClearAllCampaigns) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: "EXTREME CRITICAL: Purge Campaigns Database?",
+      message: "WARNING: This administrative purge operation will immediately and permanently erase ALL configured campaigns, creative mappings, performance histories, and audit change logs from the persistent tracking database. This resets the dashboard completely and cannot be undone. Proceed?",
+      onConfirm: async () => {
+        try {
+          await onClearAllCampaigns();
+          setConfirmDialog(null);
+          setFeedbackAlert({
+            isOpen: true,
+            title: "Campaign Database Reset",
+            message: "All ad campaigns, audit change logs, and visual performance histories have successfully been cleared. Your system is now initialized with a clean state."
+          });
+        } catch (e) {
+          console.error(e);
+          setConfirmDialog(null);
+          setFeedbackAlert({
+            isOpen: true,
+            title: "Database Error",
+            message: "An unexpected storage engine response interrupted the delete routines."
+          });
+        }
+      }
+    });
   };
 
   return (
@@ -1033,7 +1077,11 @@ export default function CampaignList({
                               if (rolePermission.canEditCampaigns) {
                                 handleOpenEditModal(c);
                               } else {
-                                alert("Locked: Your role does not grant campaign modification permissions.");
+                                setFeedbackAlert({
+                                  isOpen: true,
+                                  title: "Access Restricted",
+                                  message: "Locked: Your simulated role does not grant campaign modification permissions."
+                                });
                               }
                             }}
                             disabled={!rolePermission.canEditCampaigns}
@@ -1050,12 +1098,22 @@ export default function CampaignList({
                             type="button"
                             onClick={async () => {
                               if (!rolePermission.canDeleteCampaigns) {
-                                alert("Policy violation: Campaign deletions are forbidden under your simulated role.");
+                                setFeedbackAlert({
+                                  isOpen: true,
+                                  title: "Deletion Locked",
+                                  message: "Policy violation: Campaign deletions are forbidden under your simulated role."
+                                });
                                 return;
                               }
-                              if (confirm(`Are you absolutely sure you want to permanently delete campaign "${c.name}"? This operation will append a deletion log in our audit history.`)) {
-                                await onDeleteCampaign(c.id, c.name);
-                              }
+                              setConfirmDialog({
+                                isOpen: true,
+                                title: "Confirm Campaign Deletion",
+                                message: `Are you absolutely sure you want to permanently delete campaign "${c.name}"? This operation will append a deletion log in the audit history.`,
+                                onConfirm: async () => {
+                                  await onDeleteCampaign(c.id, c.name);
+                                  setConfirmDialog(null);
+                                }
+                              });
                             }}
                             disabled={!rolePermission.canDeleteCampaigns}
                             className={`p-1.5 border rounded-lg transition-all ${
@@ -1283,7 +1341,11 @@ export default function CampaignList({
                       if (rolePermission.canEditCampaigns) {
                         handleOpenEditModal(c);
                       } else {
-                        alert("Locked: Your role does not grant campaign modification permissions.");
+                        setFeedbackAlert({
+                          isOpen: true,
+                          title: "Access Restricted",
+                          message: "Locked: Your simulated role does not grant campaign modification permissions."
+                        });
                       }
                     }}
                     disabled={!rolePermission.canEditCampaigns}
@@ -1300,12 +1362,22 @@ export default function CampaignList({
                   <button
                     onClick={async () => {
                       if (!rolePermission.canDeleteCampaigns) {
-                        alert("Policy violation: Campaign deletions are forbidden under your simulated role.");
+                        setFeedbackAlert({
+                          isOpen: true,
+                          title: "Deletion Locked",
+                          message: "Policy violation: Campaign deletions are forbidden under your simulated role."
+                        });
                         return;
                       }
-                      if (confirm(`Are you absolutely sure you want to permanently delete campaign "${c.name}"? This operation will append a deletion log in our audit history.`)) {
-                        await onDeleteCampaign(c.id, c.name);
-                      }
+                      setConfirmDialog({
+                        isOpen: true,
+                        title: "Confirm Campaign Deletion",
+                        message: `Are you absolutely sure you want to permanently delete campaign "${c.name}"? This operation will append a deletion log in the audit history.`,
+                        onConfirm: async () => {
+                          await onDeleteCampaign(c.id, c.name);
+                          setConfirmDialog(null);
+                        }
+                      });
                     }}
                     disabled={!rolePermission.canDeleteCampaigns}
                     className={`p-1.5 border rounded-lg transition-all ${
@@ -1321,6 +1393,29 @@ export default function CampaignList({
               </div>
             );
           })}
+          
+          {/* Admin Database Control panel */}
+          {rolePermission?.role === "Admin" && (
+            <div className="mt-8 p-6 bg-rose-50/40 border border-red-100 rounded-2xl space-y-4" id="admin-campaign-purger-zone">
+              <div className="flex items-center gap-2 text-rose-600 font-bold text-xs uppercase tracking-wider">
+                <Sliders size={16} className="text-rose-650 shrink-0" />
+                <span>Super Admin Campaigns Control Panel</span>
+              </div>
+              <p className="text-xs text-slate-500 font-sans leading-relaxed">
+                Highly sensitive action panel. You possess administrative clearance to purge all configured active ad campaigns, creative mappings, performance history nodes, and audit ledger logs. This action resets your performance dashboards completely.
+              </p>
+              <div>
+                <button
+                  type="button"
+                  onClick={handleClearCampaignsWithConfirmation}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-rose-100 text-rose-750 font-bold rounded-lg border border-red-200 hover:border-red-300 transition-all text-xs cursor-pointer"
+                >
+                  <Trash2 size={13} />
+                  <span>Purge All Campaigns &amp; Audits</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
         </>
@@ -1818,9 +1913,15 @@ export default function CampaignList({
                               <button
                                 type="button"
                                 onClick={async () => {
-                                  if (confirm("Are you sure you want to permanently delete this change log entry from the audit records?")) {
-                                    await onDeleteChangeLog(log.id);
-                                  }
+                                  setConfirmDialog({
+                                    isOpen: true,
+                                    title: "Delete Change Log Entry?",
+                                    message: "Are you sure you want to permanently delete this change log entry from the audit records?",
+                                    onConfirm: async () => {
+                                      await onDeleteChangeLog(log.id);
+                                      setConfirmDialog(null);
+                                    }
+                                  });
                                 }}
                                 className="p-1 px-2 border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-100 rounded-lg transition-all"
                                 title="Delete change log entry"
@@ -2169,8 +2270,16 @@ export default function CampaignList({
                             <button
                               type="button"
                               onClick={async () => {
-                                if (onDeleteComparison && window.confirm("Are you sure you want to delete this comparison ledger row?")) {
-                                  await onDeleteComparison(c.id);
+                                if (onDeleteComparison) {
+                                  setConfirmDialog({
+                                    isOpen: true,
+                                    title: "Delete Comparison Row?",
+                                    message: "Are you sure you want to delete this comparison ledger row?",
+                                    onConfirm: async () => {
+                                      await onDeleteComparison(c.id);
+                                      setConfirmDialog(null);
+                                    }
+                                  });
                                 }
                               }}
                               className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-md transition-all cursor-pointer"
@@ -2550,6 +2659,65 @@ export default function CampaignList({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Native Confirmation Dialog (No window.confirm blocks) */}
+      {confirmDialog && confirmDialog.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-51 animate-fade-in" style={{ zIndex: 9999 }} id="campaign-list-custom-confirm-modal">
+          <div className="bg-white border border-slate-150 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl shrink-0">
+                <AlertCircle size={20} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-slate-900">{confirmDialog.title}</h4>
+                <p className="text-xs text-slate-500 font-sans leading-relaxed">{confirmDialog.message}</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 hover:bg-slate-50 text-slate-500 font-bold border border-slate-200 rounded-lg text-xs cursor-pointer"
+              >
+                Cancel Action
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow-xs cursor-pointer"
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic System Notice Alert Dialog (No window.alert blocks) */}
+      {feedbackAlert && feedbackAlert.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-51 animate-fade-in" style={{ zIndex: 9999 }} id="campaign-list-custom-alert-modal">
+          <div className="bg-white border border-slate-150 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
+                <AlertCircle size={18} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-slate-900">{feedbackAlert.title}</h4>
+                <p className="text-xs text-slate-500 font-sans leading-relaxed">{feedbackAlert.message}</p>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setFeedbackAlert(null)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs shadow-xs cursor-pointer"
+              >
+                Acknowledge
+              </button>
+            </div>
           </div>
         </div>
       )}

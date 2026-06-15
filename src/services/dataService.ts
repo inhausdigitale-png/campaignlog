@@ -79,128 +79,9 @@ const CREATIVE_SOLAR_PLACEHOLDER = "https://images.unsplash.com/photo-1509391366
 const CREATIVE_B2B_PLACEHOLDER = "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=800&q=80";
 
 // Seeds (Initial Mock Data)
-const INITIAL_CAMPAIGNS: Campaign[] = [
-  {
-    id: "camp-g-001",
-    name: "Google Search - High-Intent Solar Lead Gen",
-    status: "active",
-    platform: "Google Ads",
-    budget: 5000,
-    spend: 3420,
-    conversions: 142,
-    clicks: 1240,
-    impressions: 15400,
-    startDate: "2026-05-01",
-    endDate: "2026-06-30",
-    objectives: "Generate phone call is and form fill leads for residential solar installations.",
-    createdAt: new Date("2026-05-01T08:00:00Z").toISOString(),
-    updatedAt: new Date("2026-06-10T15:30:00Z").toISOString(),
-    leads: 142,
-    svcBooking: 48,
-  },
-  {
-    id: "camp-m-002",
-    name: "Meta Retargeting - Lookalike Audiences Q2",
-    status: "active",
-    platform: "Meta (Facebook)",
-    budget: 3500,
-    spend: 3100,
-    conversions: 198,
-    clicks: 2890,
-    impressions: 48900,
-    startDate: "2026-04-15",
-    endDate: "2026-06-15",
-    objectives: "Retarget prior web visitors and custom Lookalike audiences with discount promo code.",
-    createdAt: new Date("2026-04-15T09:00:00Z").toISOString(),
-    updatedAt: new Date("2026-06-08T11:20:00Z").toISOString(),
-    leads: 198,
-    svcBooking: 62,
-  },
-  {
-    id: "camp-l-003",
-    name: "LinkedIn - Enterprise CRM Decision Makers",
-    status: "paused",
-    platform: "LinkedIn",
-    budget: 8000,
-    spend: 4200,
-    conversions: 37,
-    clicks: 650,
-    impressions: 8900,
-    startDate: "2026-05-10",
-    endDate: "2026-07-10",
-    objectives: "Download whitepaper leads targeting VPs of Sales and Sales Ops at 500+ employee companies.",
-    createdAt: new Date("2026-05-10T10:30:00Z").toISOString(),
-    updatedAt: new Date("2026-06-11T09:00:00Z").toISOString(),
-    leads: 37,
-    svcBooking: 12,
-  },
-  {
-    id: "camp-t-004",
-    name: "TikTok - Brand Amplification Launch",
-    status: "active",
-    platform: "TikTok",
-    budget: 2500,
-    spend: 1850,
-    conversions: 84,
-    clicks: 4120,
-    impressions: 98000,
-    startDate: "2026-05-20",
-    endDate: "2026-06-25",
-    objectives: "Drive visual clicks, user-generated-content challenges, and gen-z product landing hits.",
-    createdAt: new Date("2026-05-20T14:45:00Z").toISOString(),
-    updatedAt: new Date("2026-06-05T10:15:00Z").toISOString(),
-    leads: 84,
-    svcBooking: 16,
-  },
-  {
-    id: "camp-y-005",
-    name: "YouTube - Product Review Prerolls",
-    status: "draft",
-    platform: "YouTube",
-    budget: 4000,
-    spend: 0,
-    conversions: 0,
-    clicks: 0,
-    impressions: 0,
-    startDate: "2026-06-15",
-    endDate: "2026-08-15",
-    objectives: "60-second video reviews focusing on features, battery life, and overall setup guides.",
-    createdAt: new Date("2026-06-01T11:00:00Z").toISOString(),
-    updatedAt: new Date("2026-06-01T11:00:00Z").toISOString(),
-    leads: 0,
-    svcBooking: 0,
-  }
-];
+const INITIAL_CAMPAIGNS: Campaign[] = [];
 
-const INITIAL_AUDITS: AuditLog[] = [
-  {
-    id: "audit-1",
-    campaignId: "camp-g-001",
-    campaignName: "Google Search - High-Intent Solar Lead Gen",
-    changedBy: "gouthamarun123@gmail.com",
-    action: "Budget Adjustment",
-    details: "Increased campaign budget from $4,000 to $5,000 due to high historical performance and a low Cost per Acquisition ($24.08).",
-    timestamp: new Date("2026-06-10T15:30:00Z").toISOString(),
-  },
-  {
-    id: "audit-2",
-    campaignId: "camp-l-003",
-    campaignName: "LinkedIn - Enterprise CRM Decision Makers",
-    changedBy: "gouthamarun123@gmail.com",
-    action: "Paused Campaign",
-    details: "Paused the campaign temporarily because the cost per CRM lead surpassed the limits of $110 target (currently at $113.51).",
-    timestamp: new Date("2026-06-11T09:00:00Z").toISOString(),
-  },
-  {
-    id: "audit-3",
-    campaignId: "camp-m-002",
-    campaignName: "Meta Retargeting - Lookalike Audiences Q2",
-    changedBy: "growth_analyst@example.com",
-    action: "Replaced Ad Copy Graphic",
-    details: "Updated primary banner creative. Replaced standard layout picture with a high-contrast customer testimonial infographic.",
-    timestamp: new Date("2026-06-08T11:20:00Z").toISOString(),
-  }
-];
+const INITIAL_AUDITS: AuditLog[] = [];
 
 const INITIAL_LEADS: Lead[] = [
   {
@@ -674,6 +555,15 @@ export const dataService = {
 
   // --- Campaigns ---
   async getCampaigns(): Promise<Campaign[]> {
+    const SEED_VERSION_KEY = "campaigns_seeded_v15_clean";
+    if (typeof localStorage !== "undefined") {
+      if (!localStorage.getItem(SEED_VERSION_KEY)) {
+        localStorage.setItem(KEYS.CAMPAIGNS, JSON.stringify(INITIAL_CAMPAIGNS));
+        localStorage.setItem(KEYS.AUDIT_LOGS, JSON.stringify(INITIAL_AUDITS));
+        localStorage.setItem(SEED_VERSION_KEY, "true");
+      }
+    }
+
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
@@ -682,7 +572,7 @@ export const dataService = {
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Campaign));
 
           // Seed cloud DB once if empty
-          if (list.length === 0) {
+          if (list.length === 0 && INITIAL_CAMPAIGNS.length > 0) {
             console.log("[FIREBASE] Campaign collection empty. Seeding defaults...");
             for (const camp of INITIAL_CAMPAIGNS) {
               await setDoc(getDocRef("campaigns", camp.id), camp);
@@ -697,6 +587,32 @@ export const dataService = {
       }
     }
     return loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS);
+  },
+
+  async clearAllCampaigns(): Promise<boolean> {
+    // 1. Local Cache
+    saveLocal(KEYS.CAMPAIGNS, []);
+    saveLocal(KEYS.AUDIT_LOGS, []);
+
+    // 2. Cloud Sync
+    if (isFirebaseEnabled) {
+      try {
+        const q = query(getCollectionRef("campaigns"));
+        const snapshot = await getDocs(q);
+        for (const docSnap of snapshot.docs) {
+          await deleteDoc(getDocRef("campaigns", docSnap.id));
+        }
+
+        const qLogs = query(getCollectionRef("audit_logs"));
+        const logSnapshot = await getDocs(qLogs);
+        for (const docSnap of logSnapshot.docs) {
+          await deleteDoc(getDocRef("audit_logs", docSnap.id));
+        }
+      } catch (err) {
+        console.error("[FIREBASE] clearAllCampaigns Firestore sync failed:", err);
+      }
+    }
+    return true;
   },
 
   async saveCampaign(campaign: Campaign, loggedInUserEmail: string): Promise<Campaign> {
