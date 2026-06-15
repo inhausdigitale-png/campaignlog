@@ -57,6 +57,7 @@ export interface CreativeAsset {
   spend: number;
   status: "active" | "paused";
   createdAt: string;
+  creativeNewUpdatedFlag?: boolean;
   // Dynamic report generated via AI
   aiScore?: number;
   aiStrengths?: string;

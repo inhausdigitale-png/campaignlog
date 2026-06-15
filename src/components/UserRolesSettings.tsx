@@ -427,26 +427,26 @@ export default function UserRolesSettings({
           <div>
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               <UserPlus size={16} className="text-indigo-600" />
-              <span>Email Invitations &amp; Roles Dispatcher</span>
+              <span>Direct Corporate Accounts Manager</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Administrate security role credentials invitations. Recipients signing in with matching email addresses are assigned these policies automatically.
+              Administrate and register security portal login credentials. Users signing in with these credentials can login with their password immediately.
             </p>
           </div>
           
           <div className="text-[10px] bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg text-slate-400 font-extrabold font-display">
-            SENDER ID: <span className="text-indigo-600">{currentUserEmail || "local_sandbox_admin"}</span>
+            ADMINISTRATOR ID: <span className="text-indigo-600">{currentUserEmail || "local_sandbox_admin"}</span>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Dispatch Form Panel */}
           <div className="lg:col-span-1 bg-slate-50/50 border border-slate-200/50 rounded-2xl p-5" id="invite-dispatch-panel">
-            <h4 className="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">Issue New Invitation</h4>
+            <h4 className="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">Create Portal Account</h4>
             <form onSubmit={handleSubmitInvite} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 pl-1">
-                  Recipient Email Address
+                  Registered Username / Email
                 </label>
                 <div className="relative">
                   <input
@@ -459,7 +459,7 @@ export default function UserRolesSettings({
                       setInviteError("");
                       setInviteSuccess("");
                     }}
-                    placeholder="teammate@company.com"
+                    placeholder="manager@copilot.com"
                     className="w-full bg-white border border-slate-200 rounded-xl py-2 pl-9 pr-3 text-xs font-semibold text-slate-705 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                   <Mail className="absolute left-3 top-3 text-slate-400" size={13} />
@@ -486,7 +486,7 @@ export default function UserRolesSettings({
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 pl-1">
-                  Assign Login Password (Optional)
+                  Assign Account Password
                 </label>
                 <div className="relative">
                   <input
@@ -507,7 +507,7 @@ export default function UserRolesSettings({
                 className="w-full flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs transition-all cursor-pointer"
               >
                 <UserPlus size={13} />
-                <span>Dispatch Invitation</span>
+                <span>Create &amp; Save Account</span>
               </button>
 
               {inviteError && (
@@ -527,15 +527,15 @@ export default function UserRolesSettings({
           {/* Pending / Active List Panel */}
           <div className="lg:col-span-2" id="invites-logs-pipeline">
             <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
-              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-sans">Active Team Invitations</h4>
-              <span className="text-[10px] font-extrabold bg-slate-100 px-2.5 py-0.5 rounded-full text-slate-500">{invites.length} Invitations</span>
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-sans">Active Registered Accounts</h4>
+              <span className="text-[10px] font-extrabold bg-slate-100 px-2.5 py-0.5 rounded-full text-slate-500">{invites.length} Active Accounts</span>
             </div>
 
             {invites.length === 0 ? (
               <div className="py-12 border border-dashed border-slate-250 rounded-2xl flex flex-col items-center justify-center text-slate-400 bg-slate-50/20">
                 <Mail size={24} className="mb-2 stroke-[1.5] text-slate-300" />
-                <span className="text-xs font-bold">No teammate invites logged</span>
-                <p className="text-[10.5px] text-slate-400 mt-0.5">Use the dispatch panel to invite corporate users.</p>
+                <span className="text-xs font-bold">No accounts registered yet</span>
+                <p className="text-[10.5px] text-slate-400 mt-0.5">Use the credentials form to register secure accounts.</p>
               </div>
             ) : (
               <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
@@ -543,12 +543,12 @@ export default function UserRolesSettings({
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-450 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
-                        <th className="py-2.5 px-4">Teammate Email</th>
-                        <th className="py-2.5 px-4">Secure Password</th>
-                        <th className="py-2.5 px-4">Invited Role</th>
-                        <th className="py-2.5 px-4">Invited By</th>
-                        <th className="py-2.5 px-3">Date Sent</th>
-                        <th className="py-2.5 px-3 text-center">Status</th>
+                        <th className="py-2.5 px-4">Register Username / Email</th>
+                        <th className="py-2.5 px-4">Portal Password</th>
+                        <th className="py-2.5 px-4">Assigned Access Role</th>
+                        <th className="py-2.5 px-4">Created By</th>
+                        <th className="py-2.5 px-3">Date Registered</th>
+                        <th className="py-2.5 px-3 text-center">Account Status</th>
                         <th className="py-2.5 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -581,12 +581,12 @@ export default function UserRolesSettings({
                               {inv.status === "pending" ? (
                                 <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-705 text-amber-700 px-2 py-0.5 rounded-full text-[9px] font-bold border border-amber-100">
                                   <Clock size={9} />
-                                  <span>Pending</span>
+                                  <span>Pending Verification</span>
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-705 text-emerald-700 px-2 py-0.5 rounded-full text-[9px] font-bold border border-emerald-100">
+                                <span className="inline-flex items-center gap-1 bg-emerald-55 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[9px] font-bold border border-emerald-100">
                                   <BadgeCheck size={9} />
-                                  <span>Accepted</span>
+                                  <span>Active / Ready</span>
                                 </span>
                               )}
                             </td>
@@ -594,12 +594,12 @@ export default function UserRolesSettings({
                               <button
                                 id={`btn_delete_invite_${inv.id}`}
                                 onClick={() => {
-                                  if (window.confirm(`Revoke invitation for "${inv.email}"?`)) {
+                                  if (window.confirm(`De-provision and delete credential profile for "${inv.email}"?`)) {
                                     onDeleteInvite(inv.id);
                                   }
                                 }}
                                 className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer inline-flex"
-                                title="Revoke Invite"
+                                title="De-provision Account"
                               >
                                 <Trash size={12} />
                               </button>

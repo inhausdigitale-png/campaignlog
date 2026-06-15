@@ -3,13 +3,36 @@ import {
   collection,
   getDocs,
   addDoc,
-  setDoc,
+  setDoc as firestoreSetDoc,
   updateDoc,
   deleteDoc,
   doc,
   query,
   orderBy,
 } from "firebase/firestore";
+
+function cleanUndefinedForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) {
+    return obj.map(cleanUndefinedForFirestore);
+  }
+  if (typeof obj === "object") {
+    const cleaned: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        cleaned[key] = cleanUndefinedForFirestore(val);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
+const setDoc = (ref: any, data: any, options?: any) => {
+  const cleanedData = cleanUndefinedForFirestore(data);
+  return firestoreSetDoc(ref, cleanedData, options);
+};
 import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, CampaignPerformance, Invite } from "../types";
 
 // Key definitions for LocalStorage fallback
@@ -594,13 +617,14 @@ function getDocRef(name: string, docId: string) {
   return doc(db, name, docId);
 }
 
-const FIRESTORE_TIMEOUT_MS = 8000;
+const FIRESTORE_TIMEOUT_MS = 1500;
 
 async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
   let timer: any;
   const timeoutPromise = new Promise<T>((resolve) => {
     timer = setTimeout(() => {
-      console.warn(`[FIREBASE] Request timed out. Using local cache fallback for this specific action so the app stays responsive.`);
+      console.warn(`[FIREBASE] Request timed out. disabling Firebase sync to keep the app responsive. Falling back to local cache.`);
+      disableFirebaseSync();
       resolve(fallback);
     }, FIRESTORE_TIMEOUT_MS);
   });
@@ -615,13 +639,14 @@ async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-const FIRESTORE_WRITE_TIMEOUT_MS = 3000;
+const FIRESTORE_WRITE_TIMEOUT_MS = 1500;
 
 async function withWriteTimeout(promise: Promise<any>, path: string): Promise<any> {
   let timer: any;
   const timeoutPromise = new Promise<any>((_, reject) => {
     timer = setTimeout(() => {
-      reject(new Error(`[FIREBASE] Write request to ${path} timed out after ${FIRESTORE_WRITE_TIMEOUT_MS}ms.`));
+      disableFirebaseSync();
+      reject(new Error(`[FIREBASE] Write request to ${path} timed out after ${FIRESTORE_WRITE_TIMEOUT_MS}ms. Disabling further Firebase sync.`));
     }, FIRESTORE_WRITE_TIMEOUT_MS);
   });
 
@@ -992,40 +1017,44 @@ export const dataService = {
       id: activeId,
       createdAt: rep.createdAt || new Date().toISOString(),
     };
+
+    // 1. Local Cache
+    const list = loadLocal<CampaignReport>(KEYS.REPORTS, INITIAL_REPORTS);
+    const idx = list.findIndex((c) => c.id === rep.id);
+    if (idx !== -1) {
+      list[idx] = finalReport;
+    } else {
+      list.unshift(finalReport);
+    }
+    saveLocal(KEYS.REPORTS, list);
+
+    // 2. Cloud Sync
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("campaign_reports", activeId), finalReport);
+        await withWriteTimeout(setDoc(getDocRef("campaign_reports", activeId), finalReport), `campaign_reports/${activeId}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `campaign_reports/${activeId}`);
+        console.warn("[FIREBASE] saveCampaignReport Firestore sync failed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<CampaignReport>(KEYS.REPORTS, INITIAL_REPORTS);
-      const idx = list.findIndex((c) => c.id === rep.id);
-      if (idx !== -1) {
-        list[idx] = finalReport;
-      } else {
-        list.unshift(finalReport);
-      }
-      saveLocal(KEYS.REPORTS, list);
     }
     return finalReport;
   },
 
   async deleteCampaignReport(id: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<CampaignReport>(KEYS.REPORTS, INITIAL_REPORTS);
+    const filtered = list.filter((c) => c.id !== id);
+    saveLocal(KEYS.REPORTS, filtered);
+
+    // 2. Cloud Sync
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("campaign_reports", id));
+        await withWriteTimeout(deleteDoc(getDocRef("campaign_reports", id)), `campaign_reports/${id}`);
         return true;
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `campaign_reports/${id}`);
+        console.warn("[FIREBASE] deleteCampaignReport Firestore sync failed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<CampaignReport>(KEYS.REPORTS, INITIAL_REPORTS);
-      const filtered = list.filter((c) => c.id !== id);
-      saveLocal(KEYS.REPORTS, filtered);
-      return true;
     }
-    return false;
+    return true;
   },
 
   // --- Metric Comparisons ---
@@ -1061,40 +1090,44 @@ export const dataService = {
       id: activeId,
       createdAt: comp.createdAt || new Date().toISOString(),
     };
+
+    // 1. Local Cache
+    const list = loadLocal<MetricComparison>(KEYS.COMPARISONS, INITIAL_COMPARISONS);
+    const idx = list.findIndex((c) => c.id === comp.id);
+    if (idx !== -1) {
+      list[idx] = finalComp;
+    } else {
+      list.unshift(finalComp);
+    }
+    saveLocal(KEYS.COMPARISONS, list);
+
+    // 2. Cloud Sync
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("metric_comparisons", activeId), finalComp);
+        await withWriteTimeout(setDoc(getDocRef("metric_comparisons", activeId), finalComp), `metric_comparisons/${activeId}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `metric_comparisons/${activeId}`);
+        console.warn("[FIREBASE] saveMetricComparison Firestore sync failed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<MetricComparison>(KEYS.COMPARISONS, INITIAL_COMPARISONS);
-      const idx = list.findIndex((c) => c.id === comp.id);
-      if (idx !== -1) {
-        list[idx] = finalComp;
-      } else {
-        list.unshift(finalComp);
-      }
-      saveLocal(KEYS.COMPARISONS, list);
     }
     return finalComp;
   },
 
   async deleteMetricComparison(id: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<MetricComparison>(KEYS.COMPARISONS, INITIAL_COMPARISONS);
+    const filtered = list.filter((c) => c.id !== id);
+    saveLocal(KEYS.COMPARISONS, filtered);
+
+    // 2. Cloud Sync
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("metric_comparisons", id));
+        await withWriteTimeout(deleteDoc(getDocRef("metric_comparisons", id)), `metric_comparisons/${id}`);
         return true;
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `metric_comparisons/${id}`);
+        console.warn("[FIREBASE] deleteMetricComparison Firestore sync failed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<MetricComparison>(KEYS.COMPARISONS, INITIAL_COMPARISONS);
-      const filtered = list.filter((c) => c.id !== id);
-      saveLocal(KEYS.COMPARISONS, filtered);
-      return true;
     }
-    return false;
+    return true;
   },
 
   // --- Change Log Entries ---
@@ -1123,47 +1156,51 @@ export const dataService = {
   },
 
   async saveChangeLogEntry(chg: ChangeLogEntry): Promise<ChangeLogEntry> {
-    const isNew = !chg.id || chg.id.length === 0 || chg.id.startsWith("temp-");
+    const isNew = !chg.id || chg.id.length === 0 || chg.id.startsWith("temp-") || chg.id.startsWith("chg-temp-");
     const activeId = isNew ? "chg-" + Math.random().toString(36).substring(2, 9) : chg.id;
     const finalChg: ChangeLogEntry = {
       ...chg,
       id: activeId,
       createdAt: chg.createdAt || new Date().toISOString(),
     };
+
+    // 1. Local Cache
+    const list = loadLocal<ChangeLogEntry>(KEYS.CHANGE_LOGS, INITIAL_CHANGE_LOG_ENTRIES);
+    const idx = list.findIndex((c) => c.id === chg.id);
+    if (idx !== -1) {
+      list[idx] = finalChg;
+    } else {
+      list.unshift(finalChg);
+    }
+    saveLocal(KEYS.CHANGE_LOGS, list);
+
+    // 2. Cloud Sync
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("change_log_entries", activeId), finalChg);
+        await withWriteTimeout(setDoc(getDocRef("change_log_entries", activeId), finalChg), `change_log_entries/${activeId}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `change_log_entries/${activeId}`);
+        console.warn("[FIREBASE] saveChangeLogEntry Firestore sync failed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<ChangeLogEntry>(KEYS.CHANGE_LOGS, INITIAL_CHANGE_LOG_ENTRIES);
-      const idx = list.findIndex((c) => c.id === chg.id);
-      if (idx !== -1) {
-        list[idx] = finalChg;
-      } else {
-        list.unshift(finalChg);
-      }
-      saveLocal(KEYS.CHANGE_LOGS, list);
     }
     return finalChg;
   },
 
   async deleteChangeLogEntry(id: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<ChangeLogEntry>(KEYS.CHANGE_LOGS, INITIAL_CHANGE_LOG_ENTRIES);
+    const filtered = list.filter((c) => c.id !== id);
+    saveLocal(KEYS.CHANGE_LOGS, filtered);
+
+    // 2. Cloud Sync
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("change_log_entries", id));
+        await withWriteTimeout(deleteDoc(getDocRef("change_log_entries", id)), `change_log_entries/${id}`);
         return true;
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `change_log_entries/${id}`);
+        console.warn("[FIREBASE] deleteChangeLogEntry Firestore sync failed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<ChangeLogEntry>(KEYS.CHANGE_LOGS, INITIAL_CHANGE_LOG_ENTRIES);
-      const filtered = list.filter((c) => c.id !== id);
-      saveLocal(KEYS.CHANGE_LOGS, filtered);
-      return true;
     }
-    return false;
+    return true;
   },
 
   // --- Portal Reports ---
@@ -1200,40 +1237,43 @@ export const dataService = {
       createdAt: row.createdAt || new Date().toISOString(),
     };
 
+    // 1. Local Cache
+    const list = loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS);
+    const idx = list.findIndex((r) => r.id === row.id);
+    if (idx !== -1) {
+      list[idx] = finalRow;
+    } else {
+      list.unshift(finalRow);
+    }
+    saveLocal(KEYS.PORTAL_REPORTS, list);
+
+    // 2. Cloud Sync
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("portal_reports", activeId), finalRow);
+        await withWriteTimeout(setDoc(getDocRef("portal_reports", activeId), finalRow), `portal_reports/${activeId}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `portal_reports/${activeId}`);
+        console.warn("[FIREBASE] savePortalReport Firestore sync failed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS);
-      const idx = list.findIndex((r) => r.id === row.id);
-      if (idx !== -1) {
-        list[idx] = finalRow;
-      } else {
-        list.unshift(finalRow);
-      }
-      saveLocal(KEYS.PORTAL_REPORTS, list);
     }
     return finalRow;
   },
 
   async deletePortalReport(id: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS);
+    const filtered = list.filter((r) => r.id !== id);
+    saveLocal(KEYS.PORTAL_REPORTS, filtered);
+
+    // 2. Cloud Sync
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("portal_reports", id));
+        await withWriteTimeout(deleteDoc(getDocRef("portal_reports", id)), `portal_reports/${id}`);
         return true;
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `portal_reports/${id}`);
+        console.warn("[FIREBASE] deletePortalReport Firestore sync failed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS);
-      const filtered = list.filter((r) => r.id !== id);
-      saveLocal(KEYS.PORTAL_REPORTS, filtered);
-      return true;
     }
-    return false;
+    return true;
   },
 
   // --- Target Budget Ledger ---
@@ -1484,39 +1524,42 @@ export const dataService = {
       id: activeId,
       createdAt: invite.createdAt || new Date().toISOString(),
     };
+
+    // 1. Local Cache
+    const list = loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES);
+    const idx = list.findIndex((c) => c.id === invite.id);
+    if (idx !== -1) {
+      list[idx] = finalInvite;
+    } else {
+      list.unshift(finalInvite);
+    }
+    saveLocal(KEYS.INVITES, list);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("invites", activeId), finalInvite);
+        await withWriteTimeout(setDoc(getDocRef("invites", activeId), finalInvite), `invites/${activeId}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `invites/${activeId}`);
+        console.warn("[FIREBASE] saveInvite Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<Invite>(KEYS.INVITES, []);
-      const idx = list.findIndex((c) => c.id === invite.id);
-      if (idx !== -1) {
-        list[idx] = finalInvite;
-      } else {
-        list.unshift(finalInvite);
-      }
-      saveLocal(KEYS.INVITES, list);
     }
     return finalInvite;
   },
 
   async deleteInvite(id: string): Promise<boolean> {
+    // 1. Local Cache
+    const list = loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES);
+    const filtered = list.filter((c) => c.id !== id);
+    saveLocal(KEYS.INVITES, filtered);
+
+    // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await deleteDoc(getDocRef("invites", id));
-        return true;
+        await withWriteTimeout(deleteDoc(getDocRef("invites", id)), `invites/${id}`);
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `invites/${id}`);
+        console.warn("[FIREBASE] deleteInvite Firestore sync bypassed, using local cache fallback:", err);
       }
-    } else {
-      const list = loadLocal<Invite>(KEYS.INVITES, []);
-      const filtered = list.filter((c) => c.id !== id);
-      saveLocal(KEYS.INVITES, filtered);
-      return true;
     }
-    return false;
+    return true;
   }
 };

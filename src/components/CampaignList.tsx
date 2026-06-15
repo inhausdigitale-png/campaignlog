@@ -82,6 +82,7 @@ export default function CampaignList({
   const [startDateFilter, setStartDateFilter] = useState("");
   const [endDateFilter, setEndDateFilter] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
+  const [editedOnly, setEditedOnly] = useState(false);
 
   // Ledger Sub-Tab dedicated filters
   const [ledgerSearch, setLedgerSearch] = useState("");
@@ -346,6 +347,14 @@ export default function CampaignList({
 
   // Filters logic
   const filteredCampaigns = campaigns.filter((c) => {
+    // Audit log check: check if the campaign has any edited/update history logged
+    const campaignLogs = (changeLogs || []).filter((log) => log.campaignId === c.id);
+    const hasEdits = campaignLogs.length > 0;
+    
+    if (editedOnly && !hasEdits) {
+      return false;
+    }
+
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesPlatform = platformFilter === "All" || c.platform === platformFilter;
     const matchesStatus = statusFilter === "All" || c.status === statusFilter;
@@ -484,7 +493,7 @@ export default function CampaignList({
   return (
     <div className="space-y-6">
       {/* Premium Campaigns Sub-Tabs Navigator */}
-      <div className="bg-white border border-slate-200/85 p-1 rounded-xl shadow-xs flex select-none max-w-3xl" id="campaigns-tab-navigator">
+      <div className="bg-white border border-slate-200/85 p-1 rounded-xl shadow-xs flex select-none max-w-2xl" id="campaigns-tab-navigator">
         <button
           type="button"
           onClick={() => setCampaignSubTab("list")}
@@ -496,18 +505,6 @@ export default function CampaignList({
         >
           <Layers size={14} />
           <span>Active Campaigns List</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setCampaignSubTab("ledger")}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-            campaignSubTab === "ledger"
-              ? "bg-indigo-600 text-white shadow-sm"
-              : "text-slate-500 hover:text-slate-800 hover:bg-slate-50/70"
-          }`}
-        >
-          <History size={14} />
-          <span>Campaign Change Ledger &amp; Report</span>
         </button>
         <button
           type="button"
@@ -534,6 +531,35 @@ export default function CampaignList({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          {/* Edited Campaigns Filter Segment Switcher */}
+          <div className="flex bg-amber-50/75 p-1 rounded-lg border border-amber-200" id="edited-campaigns-toggle">
+            <button
+              type="button"
+              onClick={() => setEditedOnly(true)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition-all text-xs font-bold cursor-pointer ${
+                editedOnly
+                  ? "bg-amber-500 text-white shadow-xs font-extrabold"
+                  : "text-amber-800 hover:text-amber-900"
+              }`}
+              title="Only show campaigns with edited history"
+            >
+              <Activity size={12} className={editedOnly ? "animate-pulse" : ""} />
+              <span>Edited Only</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditedOnly(false)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition-all text-xs font-bold cursor-pointer ${
+                !editedOnly
+                  ? "bg-white text-slate-800 border border-slate-200/50 shadow-3xs"
+                  : "text-amber-700 hover:text-amber-800"
+              }`}
+              title="Show all campaigns"
+            >
+              <span>All Campaigns</span>
+            </button>
+          </div>
+
           {/* View Mode Segment Switcher */}
           <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200" id="view-mode-selector">
             <button
@@ -679,7 +705,7 @@ export default function CampaignList({
             <Filter size={13} className="text-indigo-600" />
             <span>Interactive Filtering &amp; Date Chronology Matrix</span>
           </div>
-          {(searchTerm || platformFilter !== "All" || statusFilter !== "All" || projectFilter !== "All" || startDateFilter || endDateFilter) && (
+          {(searchTerm || platformFilter !== "All" || statusFilter !== "All" || projectFilter !== "All" || startDateFilter || endDateFilter || !editedOnly) && (
             <button
               onClick={() => {
                 setSearchTerm("");
@@ -688,6 +714,7 @@ export default function CampaignList({
                 setProjectFilter("All");
                 setStartDateFilter("");
                 setEndDateFilter("");
+                setEditedOnly(true);
               }}
               className="text-[10px] text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-50 hover:bg-rose-100 transition-all cursor-pointer border border-rose-100"
             >
@@ -861,17 +888,32 @@ export default function CampaignList({
                         
                         {/* Display change log audit details */}
                         {latestLog && (
-                          <div className="mt-2.5 p-2 bg-amber-50/70 border border-amber-200/50 rounded-lg text-[10px] text-slate-700 leading-normal max-w-[320px]">
-                            <div className="flex items-center gap-1 font-bold text-amber-800 text-[9.5px] mb-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                              <span>Last Audit Log Update</span>
+                          <div className="mt-2.5 p-2.5 bg-amber-50/80 border border-amber-200/60 rounded-lg text-[10px] text-slate-700 leading-normal max-w-[325px] shadow-3xs space-y-1">
+                            <div className="flex items-center justify-between text-amber-800 text-[9.5px] font-black uppercase tracking-wider border-b border-amber-200/40 pb-1">
+                              <span className="flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                🔧 Active Updated Campaign
+                              </span>
+                              <span className="text-[8px] bg-amber-200/60 text-amber-900 px-1 py-0.2 rounded font-mono font-bold">
+                                {latestLog.changeCategory || "Audit Edit"}
+                              </span>
                             </div>
-                            <div className="space-y-0.5">
-                              <div><span className="font-extrabold text-slate-750">Changes:</span> {latestLog.changed}</div>
-                              <div><span className="font-extrabold text-slate-750">Reason:</span> {latestLog.reason}</div>
-                              <div className="text-[8.5px] text-slate-500 font-mono mt-1 flex justify-between">
-                                <span>{latestLog.lastEditedAt ? new Date(latestLog.lastEditedAt).toLocaleDateString() : latestLog.date}</span>
-                                {latestLog.lastEditedBy && <span className="font-semibold text-slate-600">By: {latestLog.lastEditedBy}</span>}
+                            <div className="space-y-1 mt-1 text-[10.5px]">
+                              <div>
+                                <span className="font-extrabold text-amber-900">Latest Update: </span>
+                                <span className="font-semibold text-slate-800">{latestLog.changed}</span>
+                              </div>
+                              <div>
+                                <span className="font-extrabold text-amber-900">Reason for Edit: </span>
+                                <span className="italic text-slate-650 font-medium">{latestLog.reason}</span>
+                              </div>
+                              <div className="text-[9px] text-slate-500 font-mono pt-1 flex justify-between items-center border-t border-amber-100/40 mt-1">
+                                <span className="font-medium text-slate-500">
+                                  Last Updated: <span className="font-semibold text-slate-700">{latestLog.lastEditedAt ? new Date(latestLog.lastEditedAt).toLocaleString() : latestLog.date}</span>
+                                </span>
+                                {latestLog.lastEditedBy && (
+                                  <span className="font-semibold text-slate-650">By: {latestLog.lastEditedBy}</span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1161,17 +1203,32 @@ export default function CampaignList({
 
                   {/* Display change log audit details */}
                   {latestLog && (
-                    <div className="mt-3 p-2 px-2.5 bg-amber-50/70 border border-amber-200/50 rounded-lg text-[10px] text-slate-700 leading-normal">
-                      <div className="flex items-center gap-1 font-bold text-amber-800 text-[10px] mb-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        <span>Last Audit Log Update</span>
+                    <div className="mt-3 p-2.5 bg-amber-50/80 border border-amber-200/60 rounded-lg text-[10px] text-slate-700 leading-normal shadow-3xs space-y-1">
+                      <div className="flex items-center justify-between text-amber-800 text-[9.5px] font-black uppercase tracking-wider border-b border-amber-200/40 pb-1">
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          🔧 Active Updated Campaign
+                        </span>
+                        <span className="text-[8px] bg-amber-200/60 text-amber-900 px-1 py-0.2 rounded font-mono font-bold">
+                          {latestLog.changeCategory || "Audit Edit"}
+                        </span>
                       </div>
-                      <div className="space-y-0.5">
-                        <div><span className="font-extrabold text-slate-700">Changes:</span> {latestLog.changed}</div>
-                        <div><span className="font-extrabold text-slate-700">Reason:</span> {latestLog.reason}</div>
-                        <div className="text-[8.5px] text-slate-500 font-mono mt-1 flex justify-between">
-                          <span>{latestLog.lastEditedAt ? new Date(latestLog.lastEditedAt).toLocaleDateString() : latestLog.date}</span>
-                          {latestLog.lastEditedBy && <span className="font-semibold text-slate-600">By: {latestLog.lastEditedBy}</span>}
+                      <div className="space-y-1 mt-1 text-[10.5px]">
+                        <div>
+                          <span className="font-extrabold text-amber-900">Latest Update: </span>
+                          <span className="font-semibold text-slate-800">{latestLog.changed}</span>
+                        </div>
+                        <div>
+                          <span className="font-extrabold text-amber-900">Reason for Edit: </span>
+                          <span className="italic text-slate-650 font-medium">{latestLog.reason}</span>
+                        </div>
+                        <div className="text-[9px] text-slate-500 font-mono pt-1 flex justify-between items-center border-t border-amber-100/40 mt-1 font-semibold">
+                          <span className="font-medium text-slate-500">
+                            Last Updated: <span className="font-semibold text-slate-700">{latestLog.lastEditedAt ? new Date(latestLog.lastEditedAt).toLocaleString() : latestLog.date}</span>
+                          </span>
+                          {latestLog.lastEditedBy && (
+                            <span className="font-semibold text-slate-650">By: {latestLog.lastEditedBy}</span>
+                          )}
                         </div>
                       </div>
                     </div>

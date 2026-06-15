@@ -93,14 +93,29 @@ export default function AIHub({
 
       // Save to audit change logs if hook is present
       if (onSaveChangeLog) {
+        const matchedCamp = campaigns.find((c) => c.id === creative.campaignId);
+        const campName = matchedCamp ? matchedCamp.name : "Ad Campaign Reference";
+        const campStatus = matchedCamp ? matchedCamp.status : "Action Required";
+        const changeDesc = `Evaluated "${creative.name}". Assigned AI Quality score of ${report.optimizationScore}/100. Suggested headline: "${report.suggestedHeadlineFix || "N/A"}".`;
+
         await onSaveChangeLog({
           id: `log-${Date.now()}`,
+          date: new Date().toISOString().split("T")[0],
           campaignId: creative.campaignId,
-          project: "AI Operations",
-          operator: "AI Assistant (Gemini)",
+          campaignName: campName,
+          campaignStatus: campStatus,
+          adSetName: "Creative Diagnostics",
+          project: "AI Optimization",
           type: "AI Creative Diagnostics",
-          changed: `Evaluated "${creative.name}". Assigned Quality score of ${report.optimizationScore}/100.`,
-          timestamp: new Date().toISOString(),
+          changed: changeDesc,
+          reason: `AI diagnostics assessment identified weaknesses: ${(report.weaknesses || []).slice(0, 2).join(", ") || "underperforming CTR features"}.`,
+          createdAt: new Date().toISOString(),
+          lastEditedBy: "AI Assistant (Gemini)",
+          progress: "Implemented",
+          changeCategory: "Creative",
+          creativeName: creative.name,
+          creativeHeadline: report.suggestedHeadlineFix,
+          creativeBodyText: report.suggestedBodyFix,
         });
       }
     } catch (err: any) {

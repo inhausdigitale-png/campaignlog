@@ -90,6 +90,7 @@ export default function CampaignPerformanceTracker({
   const [creativeBodyTextState, setCreativeBodyTextState] = useState("");
   const [creativeImageUrl, setCreativeImageUrl] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isSavingChgLog, setIsSavingChgLog] = useState(false);
 
   // Dynamic lightbox zoom modal for creatives
   const [selectedImageModal, setSelectedImageModal] = useState<string | null>(null);
@@ -1051,6 +1052,7 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
                   };
 
                   try {
+                    setIsSavingChgLog(true);
                     if (onSaveChangeLog) {
                       await onSaveChangeLog(entry);
                       setChangesHappenedText("");
@@ -1071,6 +1073,8 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
                     }
                   } catch (err: any) {
                     alert(`Save Failed: ${err.message || err}`);
+                  } finally {
+                    setIsSavingChgLog(false);
                   }
                 }}
                 className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4 space-y-4 animate-fade-in text-xs font-medium"
@@ -1334,9 +1338,19 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
                 <div className="flex justify-end pt-2">
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all cursor-pointer shadow-xs"
+                    disabled={isSavingChgLog}
+                    className={`px-5 py-2 text-white font-bold rounded-lg transition-all shadow-xs flex items-center gap-2 ${
+                      isSavingChgLog ? "bg-indigo-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
+                    }`}
                   >
-                    Commit Audit Trail Event
+                    {isSavingChgLog ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Saving Entry...</span>
+                      </>
+                    ) : (
+                      "Commit Audit Trail Event"
+                    )}
                   </button>
                 </div>
               </form>

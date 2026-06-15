@@ -269,7 +269,7 @@ export default function App() {
       email: email.trim().toLowerCase(),
       role: roleToInvite as any,
       invitedBy: user?.email || "anonymous_sandbox_admin",
-      status: "pending",
+      status: "accepted",
       password: password || "admin123",
       createdAt: new Date().toISOString()
     };
@@ -413,12 +413,42 @@ export default function App() {
 
   // Action: Creative saving
   const handleSaveCreative = async (creative: CreativeAsset) => {
+    if (creative.id.startsWith("perf-creative-")) {
+      const perfId = creative.id.replace("perf-creative-", "");
+      const perf = (campaignPerformances || []).find((p) => p.id === perfId);
+      if (perf) {
+        const updatedPerf: CampaignPerformance = {
+          ...perf,
+          creativeImageUrl: creative.imageUrl,
+          creativeNewUpdatedFlag: creative.creativeNewUpdatedFlag !== undefined ? creative.creativeNewUpdatedFlag : (creative as any).creativeNewUpdatedFlag,
+          creativeUpdatedAt: new Date().toISOString()
+        };
+        await dataService.saveCampaignPerformance(updatedPerf);
+        await loadAllDatabaseStates();
+        return;
+      }
+    }
     await dataService.saveCreative(creative);
     await loadAllDatabaseStates();
   };
 
   // Action: Creative deletion
   const handleDeleteCreative = async (id: string) => {
+    if (id.startsWith("perf-creative-")) {
+      const perfId = id.replace("perf-creative-", "");
+      const perf = (campaignPerformances || []).find((p) => p.id === perfId);
+      if (perf) {
+        const updatedPerf: CampaignPerformance = {
+          ...perf,
+          creativeImageUrl: undefined,
+          creativeNewUpdatedFlag: false,
+          creativeUpdatedAt: new Date().toISOString()
+        };
+        await dataService.saveCampaignPerformance(updatedPerf);
+        await loadAllDatabaseStates();
+        return;
+      }
+    }
     await dataService.deleteCreative(id);
     await loadAllDatabaseStates();
   };
@@ -529,6 +559,82 @@ export default function App() {
       };
     });
   const mergedCampaigns = [...campaigns, ...mappedPerformanceCampaigns];
+
+  const mergedCreatives = React.useMemo(() => {
+    const list = [...creatives];
+    
+    (campaignPerformances || []).forEach((perf) => {
+      if (perf.creativeImageUrl) {
+        const matchedCamp = (campaigns || []).find(
+          (c) => c.name.toLowerCase() === perf.campaignName.toLowerCase()
+        );
+        
+        let platform: "Google Ads" | "Meta (Facebook)" | "LinkedIn" | "TikTok" | "YouTube" = "Google Ads";
+        const nameLower = (perf.campaignName || "").toLowerCase();
+        if (nameLower.includes("meta") || nameLower.includes("facebook") || nameLower.includes("insta")) {
+          platform = "Meta (Facebook)";
+        } else if (nameLower.includes("linkedin")) {
+          platform = "LinkedIn";
+        } else if (nameLower.includes("tiktok")) {
+          platform = "TikTok";
+        } else if (nameLower.includes("youtube")) {
+          platform = "YouTube";
+        } else if (matchedCamp) {
+          platform = matchedCamp.platform;
+        }
+
+        const derivedId = `perf-creative-${perf.id}`;
+        const existingIdx = list.findIndex((c) => c.id === derivedId);
+
+        const derivedCreative: CreativeAsset & { 
+          isPerformanceAsset: boolean; 
+          creativeNewUpdatedFlag: boolean; 
+          impressions: number;
+          reach: number;
+          svc: number;
+          booked: number;
+          ctr: number;
+        } = {
+          id: derivedId,
+          campaignId: matchedCamp?.id || perf.id,
+          campaignName: perf.campaignName,
+          name: `${perf.campaignName} — ${perf.adsetName}`,
+          platform,
+          imageUrl: perf.creativeImageUrl,
+          headline: perf.adsetName || "Adset Performance Variant",
+          bodyText: `Project: ${perf.projectName} | Ad Account: ${perf.adAccountId}`,
+          clicks: perf.clicks || 0,
+          conversions: perf.leads || 0,
+          spend: perf.amountSpend || 0,
+          status: "active",
+          createdAt: perf.creativeUpdatedAt || perf.createdAt || new Date().toISOString(),
+          isPerformanceAsset: true,
+          creativeNewUpdatedFlag: !!perf.creativeNewUpdatedFlag,
+          impressions: perf.impression || 0,
+          reach: perf.reach || 0,
+          svc: perf.svc || 0,
+          booked: perf.booked || 0,
+          ctr: perf.ctr || 0,
+        };
+
+        if (existingIdx !== -1) {
+          list[existingIdx] = {
+            ...list[existingIdx],
+            ...derivedCreative,
+            aiScore: list[existingIdx].aiScore || derivedCreative.aiScore,
+            aiStrengths: list[existingIdx].aiStrengths || derivedCreative.aiStrengths,
+            aiWeaknesses: list[existingIdx].aiWeaknesses || derivedCreative.aiWeaknesses,
+            aiSuggestedBody: list[existingIdx].aiSuggestedBody || derivedCreative.aiSuggestedBody,
+            aiSuggestedHeadline: list[existingIdx].aiSuggestedHeadline || derivedCreative.aiSuggestedHeadline,
+          };
+        } else {
+          list.push(derivedCreative);
+        }
+      }
+    });
+
+    return list;
+  }, [creatives, campaignPerformances, campaigns]);
 
   if (!user) {
     return (
@@ -868,7 +974,7 @@ export default function App() {
               {activeTab === "campaigns" && (
                 <CampaignList
                   campaigns={mergedCampaigns}
-                  creatives={creatives}
+                  creatives={mergedCreatives}
                   onSaveCampaign={handleSaveCampaign}
                   onDeleteCampaign={handleDeleteCampaign}
                   onSaveChangeLog={handleSaveChangeLogEntry}
@@ -881,7 +987,7 @@ export default function App() {
               )}
               {activeTab === "creatives" && (
                 <CreativeHub
-                  creatives={creatives}
+                  creatives={mergedCreatives}
                   campaigns={mergedCampaigns}
                   onSaveCreative={handleSaveCreative}
                   onDeleteCreative={handleDeleteCreative}
@@ -890,7 +996,7 @@ export default function App() {
               )}
               {activeTab === "ai" && (
                 <AIHub
-                  creatives={creatives}
+                  creatives={mergedCreatives}
                   campaigns={mergedCampaigns}
                   onSaveCreative={handleSaveCreative}
                   onSaveChangeLog={handleSaveChangeLogEntry}
@@ -902,7 +1008,7 @@ export default function App() {
                   leads={leads}
                   portalReports={portalReports}
                   targetBudgets={targetBudgets}
-                  creatives={creatives}
+                  creatives={mergedCreatives}
                   metricComparisons={metricComparisons}
                   campaignReports={campaignReports}
                 />

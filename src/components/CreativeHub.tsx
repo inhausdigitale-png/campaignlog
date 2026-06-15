@@ -699,6 +699,13 @@ export default function CreativeHub({
                           Score: {c.aiScore}/100
                         </div>
                       )}
+
+                      {(c as any).creativeNewUpdatedFlag && (
+                        <div className="absolute bottom-2.5 left-2.5 bg-emerald-500 text-white font-extrabold px-2 py-0.5 rounded text-[8.5px] uppercase tracking-wider shadow-sm animate-pulse flex items-center gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
+                          <span>UPDATED ATTENTION</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Metadata specs */}
@@ -756,15 +763,52 @@ export default function CreativeHub({
                           <div className="font-bold text-slate-700 mt-0.5">{c.clicks}</div>
                         </div>
                         <div>
-                          <div className="text-[9px] text-slate-400 uppercase font-display font-medium">Spent ($)</div>
-                          <div className="font-bold text-slate-700 mt-0.5">${c.spend}</div>
+                          <div className="text-[9px] text-slate-400 uppercase font-display font-medium">Spent</div>
+                          <div className="font-bold text-slate-700 mt-0.5">
+                            {(c as any).isPerformanceAsset ? `₹${c.spend.toLocaleString()}` : `$${c.spend}`}
+                          </div>
                         </div>
                       </div>
+
+                      {(c as any).isPerformanceAsset && (
+                        <div className="grid grid-cols-4 gap-1 text-center bg-indigo-50/35 p-2 rounded-xl text-indigo-900 border border-indigo-100/50 font-mono text-[10px] !mt-2">
+                          <div>
+                            <div className="text-[8px] text-indigo-400 uppercase font-medium">Impressions</div>
+                            <div className="font-bold mt-0.5">{(c as any).impressions?.toLocaleString() || 0}</div>
+                          </div>
+                          <div>
+                            <div className="text-[8px] text-indigo-400 uppercase font-medium">Reach</div>
+                            <div className="font-bold mt-0.5">{(c as any).reach?.toLocaleString() || 0}</div>
+                          </div>
+                          <div>
+                            <div className="text-[8px] text-indigo-400 uppercase font-medium">SVC</div>
+                            <div className="font-semibold mt-0.5">{(c as any).svc || 0}</div>
+                          </div>
+                          <div>
+                            <div className="text-[8px] text-indigo-400 uppercase font-medium">Booked</div>
+                            <div className="font-bold mt-0.5 text-indigo-700">{(c as any).booked || 0}</div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {/* Creative Hub Action triggers */}
                   <div className="p-4 pt-0 flex gap-2">
+                    {(c as any).creativeNewUpdatedFlag && (
+                      <button
+                        onClick={async () => {
+                          await onSaveCreative({
+                            ...c,
+                            creativeNewUpdatedFlag: false
+                          } as any);
+                        }}
+                        className="py-1.5 px-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-lg font-bold text-xs transition-all cursor-pointer shrink-0"
+                        title="Acknowledge Creative Update &amp; Clear Attention Alert"
+                      >
+                        Acknowledge
+                      </button>
+                    )}
                     <button
                       onClick={() => handleTriggerCreativeAnalysis(c)}
                       className="flex-1 py-1.5 bg-indigo-50 border border-indigo-150 text-indigo-600 hover:bg-indigo-100 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer"
@@ -833,7 +877,14 @@ export default function CreativeHub({
 
                       <td className="p-4 max-w-[250px]">
                         <div className="min-w-0">
-                          <span className="font-bold text-slate-900 block truncate" title={c.name}>{c.name}</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-slate-900 truncate" title={c.name}>{c.name}</span>
+                            {(c as any).creativeNewUpdatedFlag && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 font-extrabold text-[8px] bg-emerald-500 text-white rounded shadow-3xs uppercase tracking-wider animate-pulse shrink-0">
+                                ✨ UPDATED
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-slate-450 block truncate italic mt-1 leading-snug" title={c.headline}>
                             "{c.headline}"
                           </span>
@@ -851,15 +902,30 @@ export default function CreativeHub({
                       </td>
 
                       <td className="p-4 text-center font-mono font-bold text-slate-800">
-                        {c.conversions.toLocaleString()}
+                        <div>{c.conversions.toLocaleString()}</div>
+                        {(c as any).isPerformanceAsset && (
+                          <div className="text-[9px] text-indigo-650 text-indigo-600 mt-1 uppercase font-sans font-black tracking-wide leading-none">
+                            {((c as any).svc || 0)} SVC • {((c as any).booked || 0)} BK
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-4 text-center font-mono font-bold text-slate-800">
-                        {c.clicks.toLocaleString()}
+                        <div>{c.clicks.toLocaleString()}</div>
+                        {(c as any).isPerformanceAsset && (
+                          <div className="text-[9px] text-slate-400 mt-1 uppercase font-sans font-bold leading-none">
+                            {((c as any).impressions || 0).toLocaleString()} Impr
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-4 text-center font-mono font-bold text-slate-800">
-                        ${c.spend.toLocaleString()}
+                        <div>{(c as any).isPerformanceAsset ? `₹${c.spend.toLocaleString()}` : `$${c.spend.toLocaleString()}`}</div>
+                        {(c as any).isPerformanceAsset && (
+                          <div className="text-[9px] text-slate-400 mt-1 uppercase font-sans font-medium leading-none">
+                            {((c as any).reach || 0).toLocaleString()} Reach
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-4 text-center">
@@ -896,6 +962,21 @@ export default function CreativeHub({
 
                       <td className="p-4 text-center pr-5">
                         <div className="flex items-center justify-center gap-2">
+                          {(c as any).creativeNewUpdatedFlag && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await onSaveCreative({
+                                  ...c,
+                                  creativeNewUpdatedFlag: false
+                                } as any);
+                              }}
+                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 hover:text-amber-800 rounded font-bold text-[10px] transition-all cursor-pointer shadow-3xs"
+                              title="Acknowledge Creative Update &amp; Clear Alert"
+                            >
+                              Clear Alert
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleTriggerCreativeAnalysis(c)}
