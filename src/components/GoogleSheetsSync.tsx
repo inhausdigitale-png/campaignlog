@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { Lead, CampaignPerformance, TargetBudgetRow, Campaign } from "../types";
+import { Lead, CampaignPerformance, TargetBudgetRow, Campaign, PortalReportRow } from "../types";
 import {
   authorizeGoogleWorkspace,
   getCachedAccessToken,
@@ -37,15 +37,17 @@ interface GoogleSheetsSyncProps {
   onImportLeads: (leads: Lead[]) => Promise<void>;
   onImportPerformance: (perf: CampaignPerformance[]) => Promise<void>;
   onImportTargets: (targets: TargetBudgetRow[]) => Promise<void>;
+  onImportPortalReports?: (portals: PortalReportRow[]) => Promise<void>;
 }
 
-type SyncTargetType = "leads" | "performance" | "targets";
+type SyncTargetType = "leads" | "performance" | "targets" | "portals";
 
 export default function GoogleSheetsSync({
   campaigns,
   onImportLeads,
   onImportPerformance,
-  onImportTargets
+  onImportTargets,
+  onImportPortalReports
 }: GoogleSheetsSyncProps) {
   // Source Selection (Offline Excel file vs Cloud Google Sheets)
   const [sourceType, setSourceType] = useState<"offline" | "google">(() => {
@@ -517,6 +519,28 @@ export default function GoogleSheetsSync({
       if (leadsTargetIdx !== -1) mapping["totalLeadTarget"] = leadsTargetIdx;
       if (leadsAchIdx !== -1) mapping["totalLeadAchieved"] = leadsAchIdx;
     }
+    else if (syncType === "portals") {
+      // portals fields: Date, Portal, Project, Generated/Leads, SVS, SVC, Walkin, Gross, Net
+      const dateIdx = normHeaders.findIndex(h => h.includes("date") || h === "day");
+      const portalIdx = normHeaders.findIndex(h => h.includes("portal") || h.includes("source") || h.includes("platform"));
+      const projIdx = normHeaders.findIndex(h => h.includes("project") || h.includes("client") || h.includes("site"));
+      const genIdx = normHeaders.findIndex(h => h.includes("gen") || h.includes("lead") || h === "leads" || h === "inquiries");
+      const svsIdx = normHeaders.findIndex(h => h.includes("svs") || h.includes("scheduled"));
+      const svcIdx = normHeaders.findIndex(h => h.includes("svc") || h.includes("conducted") || h.includes("visit"));
+      const walkIdx = normHeaders.findIndex(h => h.includes("walk"));
+      const grossIdx = normHeaders.findIndex(h => h.includes("gross"));
+      const netIdx = normHeaders.findIndex(h => h === "net");
+
+      if (dateIdx !== -1) mapping["date"] = dateIdx;
+      if (portalIdx !== -1) mapping["portal"] = portalIdx;
+      if (projIdx !== -1) mapping["project"] = projIdx;
+      if (genIdx !== -1) mapping["generated"] = genIdx;
+      if (svsIdx !== -1) mapping["svs"] = svsIdx;
+      if (svcIdx !== -1) mapping["svc"] = svcIdx;
+      if (walkIdx !== -1) mapping["walkin"] = walkIdx;
+      if (grossIdx !== -1) mapping["gross"] = grossIdx;
+      if (netIdx !== -1) mapping["net"] = netIdx;
+    }
 
     setColumnMapping(mapping);
   };
@@ -527,6 +551,128 @@ export default function GoogleSheetsSync({
 
     const parsed: any[] = [];
     const rowsSubset = rawRows.slice(1); // skip headers row
+
+    // Special check for horizontal portal report format
+    if (syncType === "portals") {
+      const isHorizontalLayout = headers.some(h => {
+        const l = h.toLowerCase();
+        return l.includes("housing") || l.includes("99 acres") || l.includes("magicbricks") || l.includes("roof");
+      }) || (rawRows[1] && rawRows[1].some((h: any) => {
+        const l = String(h || "").toLowerCase();
+        return l.includes("housing") || l.includes("99 acres") || l.includes("magicbricks") || l.includes("roof");
+      }));
+
+      if (isHorizontalLayout) {
+        let dateIndex = -1;
+        for (let rowIdx = 0; rowIdx < Math.min(rawRows.length, 3); rowIdx++) {
+          const hRow = rawRows[rowIdx];
+          if (!hRow) continue;
+          dateIndex = hRow.findIndex(val => {
+            const str = String(val || "").toLowerCase();
+            return str.includes("date") || str === "day";
+          });
+          if (dateIndex !== -1) break;
+        }
+        if (dateIndex === -1) {
+          dateIndex = 1;
+        }
+
+        let hLeadsIdx = dateIndex + 1;
+        let hSvcIdx = dateIndex + 2;
+        let aLeadsIdx = dateIndex + 3;
+        let aSvcIdx = dateIndex + 4;
+        let mLeadsIdx = dateIndex + 5;
+        let mSvcIdx = dateIndex + 6;
+        let rLeadsIdx = dateIndex + 7;
+        let rSvcIdx = dateIndex + 8;
+
+        for (let rowIdx = 0; rowIdx < Math.min(rawRows.length, 3); rowIdx++) {
+          const hRow = rawRows[rowIdx];
+          if (!hRow) continue;
+          hRow.forEach((val, colIdx) => {
+            const str = String(val || "").toLowerCase();
+            if (str.includes("housing")) {
+              hLeadsIdx = colIdx;
+              hSvcIdx = colIdx + 1;
+            } else if (str.includes("99 acres") || str.includes("99acres")) {
+              aLeadsIdx = colIdx;
+              aSvcIdx = colIdx + 1;
+            } else if (str.includes("magicbricks") || str.includes("magic")) {
+              mLeadsIdx = colIdx;
+              mSvcIdx = colIdx + 1;
+            } else if (str.includes("roof") || str.includes("floor") || str.includes("roof&floor")) {
+              rLeadsIdx = colIdx;
+              rSvcIdx = colIdx + 1;
+            }
+          });
+        }
+
+        for (const row of rowsSubset) {
+          if (row.length === 0 || !row.some(val => val.trim())) continue;
+
+          const rowDateRaw = String(row[dateIndex] || "").trim();
+          if (!rowDateRaw) continue;
+
+          const rowDateRawLower = rowDateRaw.toLowerCase();
+          if (
+            rowDateRawLower === "date" ||
+            rowDateRawLower === "day" ||
+            rowDateRawLower.includes("total") ||
+            rowDateRawLower.includes("week") ||
+            (rowDateRawLower.includes("may") && rowDateRawLower.includes("-")) ||
+            (rowDateRawLower.includes("june") && rowDateRawLower.includes("-"))
+          ) {
+            continue;
+          }
+
+          let rowDate = rowDateRaw;
+          if (/^\d+(\.\d+)?$/.test(rowDateRaw)) {
+            const serial = parseFloat(rowDateRaw);
+            const dateObj = new Date((serial - 25569) * 86450 * 1000);
+            if (!isNaN(dateObj.getTime())) {
+              rowDate = dateObj.toISOString().split("T")[0];
+            }
+          } else {
+            const parts = rowDateRaw.split(/[-/.]/);
+            if (parts.length === 3) {
+              if (parts[0].length === 4) {
+                rowDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+              } else if (parts[2].length === 4) {
+                rowDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+              }
+            }
+          }
+
+          const portalChannels = [
+            { name: "Housing", genIdx: hLeadsIdx, svcIdx: hSvcIdx },
+            { name: "99 Acres", genIdx: aLeadsIdx, svcIdx: aSvcIdx },
+            { name: "Magicbricks", genIdx: mLeadsIdx, svcIdx: mSvcIdx },
+            { name: "Roof&floor", genIdx: rLeadsIdx, svcIdx: rSvcIdx }
+          ];
+
+          portalChannels.forEach(chan => {
+            const generated = parseInt(String(row[chan.genIdx] || "").replace(/[^0-9]/g, "")) || 0;
+            const svc = parseInt(String(row[chan.svcIdx] || "").replace(/[^0-9]/g, "")) || 0;
+
+            parsed.push({
+              id: `p-rep-g-${Math.random().toString(36).substring(2, 9)}`,
+              date: rowDate,
+              project: "Skyline Residency",
+              portal: chan.name,
+              generated,
+              svs: svc,
+              svc,
+              walkin: 0,
+              gross: 0,
+              net: 0,
+              createdAt: new Date().toISOString(),
+              editReason: "Spreadsheet Horizontal Sync"
+            } as PortalReportRow);
+          });
+        }
+        return parsed;
+      }
+    }
 
     for (const row of rowsSubset) {
       if (row.length === 0 || !row.some(val => val.trim())) continue;
@@ -648,6 +794,61 @@ export default function GoogleSheetsSync({
           createdAt: new Date().toISOString()
         } as TargetBudgetRow);
       }
+      else if (syncType === "portals") {
+        // Vertical Portal Report Layout
+        const dateCol = columnMapping["date"];
+        const portalCol = columnMapping["portal"];
+        const projCol = columnMapping["project"];
+        const genCol = columnMapping["generated"];
+        const svsCol = columnMapping["svs"];
+        const svcCol = columnMapping["svc"];
+        const walkCol = columnMapping["walkin"];
+        const grossCol = columnMapping["gross"];
+        const netCol = columnMapping["net"];
+
+        const dateRaw = dateCol !== undefined && row[dateCol] ? row[dateCol].trim() : new Date().toISOString().split("T")[0];
+        let rowDate = dateRaw;
+        if (/^\d+(\.\d+)?$/.test(dateRaw)) {
+          const serial = parseFloat(dateRaw);
+          const dateObj = new Date((serial - 25569) * 86450 * 1000);
+          if (!isNaN(dateObj.getTime())) {
+            rowDate = dateObj.toISOString().split("T")[0];
+          }
+        } else {
+          const parts = dateRaw.split(/[-/.]/);
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              rowDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+            } else if (parts[2].length === 4) {
+              rowDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            }
+          }
+        }
+
+        const portal = portalCol !== undefined && row[portalCol] ? row[portalCol].trim() : "Housing";
+        const project = projCol !== undefined && row[projCol] ? row[projCol].trim() : "Skyline Residency";
+        const generated = genCol !== undefined && row[genCol] ? (parseInt(row[genCol].replace(/[^0-9]/g, "")) || 0) : 0;
+        const svs = svsCol !== undefined && row[svsCol] ? (parseInt(row[svsCol].replace(/[^0-9]/g, "")) || 0) : 0;
+        const svc = svcCol !== undefined && row[svcCol] ? (parseInt(row[svcCol].replace(/[^0-9]/g, "")) || 0) : 0;
+        const walkin = walkCol !== undefined && row[walkCol] ? (parseInt(row[walkCol].replace(/[^0-9]/g, "")) || 0) : 0;
+        const gross = grossCol !== undefined && row[grossCol] ? (parseInt(row[grossCol].replace(/[^0-9]/g, "")) || 0) : 0;
+        const net = netCol !== undefined && row[netCol] ? (parseInt(row[netCol].replace(/[^0-9]/g, "")) || 0) : 0;
+
+        parsed.push({
+          id: `p-rep-g-${Math.random().toString(36).substring(2, 9)}`,
+          date: rowDate,
+          portal,
+          project,
+          generated,
+          svs,
+          svc,
+          walkin,
+          gross,
+          net,
+          createdAt: new Date().toISOString(),
+          editReason: "Spreadsheet Vertical Sync"
+        } as PortalReportRow);
+      }
     }
     return parsed;
   };
@@ -676,6 +877,13 @@ export default function GoogleSheetsSync({
       } else if (syncType === "targets") {
         await onImportTargets(itemsToImport);
         setSuccessMessage(`Successfully synchronized ${itemsToImport.length} Weekly Targeting Ledger plans!`);
+      } else if (syncType === "portals") {
+        if (onImportPortalReports) {
+          await onImportPortalReports(itemsToImport);
+          setSuccessMessage(`Successfully synchronized ${itemsToImport.length} Portal Report rows!`);
+        } else {
+          alert("Import failed: Portal Reports integration is not configured in this view.");
+        }
       }
       setShowConfirmModal(false);
       setItemsToImport([]);
@@ -1149,11 +1357,12 @@ export default function GoogleSheetsSync({
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 font-display">
                         1. Select Destination Database Table
                       </label>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                         {[
                           { id: "leads", label: "Leads Database", desc: "For raw marketing inquiries and prospects." },
                           { id: "performance", label: "Performance Metrics", desc: "Campaign ad-spend and performance logs." },
-                          { id: "targets", label: "Targeting Ledgers", desc: "Monthly target records and week divisions." }
+                          { id: "targets", label: "Targeting Ledgers", desc: "Monthly target records and week divisions." },
+                          { id: "portals", label: "Portal Reports", desc: "Digital platform inquiry entries with SVS and SVC aggregates." }
                         ].map((m) => (
                           <button
                             key={m.id}
@@ -1527,6 +1736,107 @@ export default function GoogleSheetsSync({
                             </div>
                           </>
                         )}
+
+                        {syncType === "portals" && (
+                          <>
+                            {/* Date */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Record Date (YYYY-MM-DD):</span>
+                              <select
+                                value={columnMapping["date"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, date: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* Portal */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Portal / Channel Source:</span>
+                              <select
+                                value={columnMapping["portal"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, portal: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* Project Tag */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Project Name:</span>
+                              <select
+                                value={columnMapping["project"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, project: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* Generated */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Generated Leads:</span>
+                              <select
+                                value={columnMapping["generated"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, generated: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* SVS */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Site Visits Scheduled (SVS):</span>
+                              <select
+                                value={columnMapping["svs"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, svs: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* SVC */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Site Visits Conducted (SVC):</span>
+                              <select
+                                value={columnMapping["svc"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, svc: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -1574,6 +1884,15 @@ export default function GoogleSheetsSync({
                                     <th className="p-2">Target Leads</th>
                                   </>
                                 )}
+                                {syncType === "portals" && (
+                                  <>
+                                    <th className="p-2">Date</th>
+                                    <th className="p-2">Portal Name</th>
+                                    <th className="p-2">Project</th>
+                                    <th className="p-2">Leads</th>
+                                    <th className="p-2">Site Visits</th>
+                                  </>
+                                )}
                               </tr>
                             </thead>
                             <tbody>
@@ -1604,6 +1923,15 @@ export default function GoogleSheetsSync({
                                       <td className="p-2 text-slate-500">{item.medium}</td>
                                       <td className="p-2 font-mono font-semibold">₹{item.budget.toLocaleString()}</td>
                                       <td className="p-2 font-mono text-indigo-600 font-bold">{item.totalLeadTarget}</td>
+                                    </>
+                                  )}
+                                  {syncType === "portals" && (
+                                    <>
+                                      <td className="p-2 font-semibold text-slate-705 text-slate-705 text-slate-700 font-mono">{item.date}</td>
+                                      <td className="p-2 font-bold text-slate-900">{item.portal}</td>
+                                      <td className="p-2">{item.project}</td>
+                                      <td className="p-2 font-mono text-indigo-600 font-bold">{item.generated}</td>
+                                      <td className="p-2 font-mono text-emerald-600 font-bold">{item.svc}</td>
                                     </>
                                   )}
                                 </tr>
@@ -1672,7 +2000,7 @@ export default function GoogleSheetsSync({
               <div className="flex justify-between">
                 <span className="text-slate-500 font-medium font-sans">Destination Table:</span>
                 <span className="font-bold text-indigo-700 uppercase tracking-wide font-mono text-[10.5px]">
-                  {syncType === "leads" ? "Leads Database" : syncType === "performance" ? "Performance Tracker" : "Weekly Targeting Ledger"}
+                  {syncType === "leads" ? "Leads Database" : syncType === "performance" ? "Performance Tracker" : syncType === "targets" ? "Weekly Targeting Ledger" : "Portal Reports"}
                 </span>
               </div>
               <div className="flex justify-between border-t border-slate-150 pt-2 mt-1">

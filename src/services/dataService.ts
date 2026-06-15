@@ -439,60 +439,86 @@ const INITIAL_CHANGE_LOG_ENTRIES: ChangeLogEntry[] = [
 ];
 
 // Seed databases for Portal performance reports
-const INITIAL_PORTAL_REPORTS: PortalReportRow[] = [
-  {
-    id: "p-rep-001",
-    date: "2026-06-10",
-    portal: "Housing",
-    project: "Skyline Residency",
-    generated: 45,
-    svs: 18,
-    svc: 12,
-    walkin: 6,
-    gross: 1,
-    net: 1,
-    createdAt: new Date("2026-06-10T09:00:00Z").toISOString(),
-  },
-  {
-    id: "p-rep-002",
-    date: "2026-06-09",
-    portal: "99 Acres",
-    project: "Green Gardens Phase 2",
-    generated: 32,
-    svs: 14,
-    svc: 8,
-    walkin: 4,
-    gross: 0,
-    net: 0,
-    createdAt: new Date("2026-06-09T10:15:00Z").toISOString(),
-  },
-  {
-    id: "p-rep-003",
-    date: "2026-06-08",
-    portal: "Magicbricks",
-    project: "Urban Elite Suites",
-    generated: 58,
-    svs: 24,
-    svc: 15,
-    walkin: 9,
-    gross: 2,
-    net: 2,
-    createdAt: new Date("2026-06-08T11:30:00Z").toISOString(),
-  },
-  {
-    id: "p-rep-004",
-    date: "2026-06-07",
-    portal: "Roof&floor",
-    project: "Skyline Residency",
-    generated: 15,
-    svs: 6,
-    svc: 4,
-    walkin: 2,
-    gross: 0,
-    net: 0,
-    createdAt: new Date("2026-06-07T14:45:00Z").toISOString(),
-  }
+const RAW_PORTAL_LEAL_DATA = [
+  // May 01 - May 03
+  { d: "2026-05-01", h: [5, 2], a: [6, 1], m: [5, 3], r: [0, 0] },
+  { d: "2026-05-02", h: [1, 2], a: [6, 0], m: [7, 1], r: [1, 0] },
+  { d: "2026-05-03", h: [3, 1], a: [5, 3], m: [9, 1], r: [0, 0] },
+  // May 04 - May 10
+  { d: "2026-05-04", h: [4, 0], a: [6, 2], m: [7, 0], r: [1, 0] },
+  { d: "2026-05-05", h: [2, 1], a: [3, 0], m: [9, 1], r: [0, 0] },
+  { d: "2026-05-06", h: [6, 1], a: [7, 1], m: [8, 0], r: [2, 0] },
+  { d: "2026-05-07", h: [1, 0], a: [1, 1], m: [4, 0], r: [1, 0] },
+  { d: "2026-05-08", h: [4, 0], a: [3, 1], m: [12, 0], r: [1, 0] },
+  { d: "2026-05-09", h: [3, 1], a: [2, 1], m: [11, 3], r: [0, 0] },
+  { d: "2026-05-10", h: [3, 2], a: [4, 1], m: [16, 1], r: [0, 0] },
+  // May 11 - May 17
+  { d: "2026-05-11", h: [2, 0], a: [1, 1], m: [8, 0], r: [3, 1] },
+  { d: "2026-05-12", h: [1, 0], a: [0, 1], m: [5, 2], r: [1, 0] },
+  { d: "2026-05-13", h: [1, 0], a: [4, 0], m: [5, 0], r: [3, 0] },
+  { d: "2026-05-14", h: [2, 0], a: [7, 2], m: [2, 0], r: [2, 0] },
+  { d: "2026-05-15", h: [0, 0], a: [5, 0], m: [6, 0], r: [2, 0] },
+  { d: "2026-05-16", h: [6, 0], a: [7, 2], m: [6, 1], r: [1, 2] },
+  { d: "2026-05-17", h: [7, 1], a: [8, 1], m: [6, 2], r: [1, 1] },
+  // May 18 - May 24
+  { d: "2026-05-18", h: [15, 1], a: [6, 0], m: [1, 0], r: [2, 0] },
+  { d: "2026-05-19", h: [2, 0], a: [1, 0], m: [0, 0], r: [1, 0] },
+  { d: "2026-05-20", h: [5, 0], a: [5, 0], m: [13, 0], r: [2, 0] },
+  { d: "2026-05-21", h: [5, 0], a: [3, 0], m: [5, 0], r: [0, 0] },
+  { d: "2026-05-22", h: [13, 0], a: [11, 0], m: [9, 0], r: [0, 0] },
+  { d: "2026-05-23", h: [3, 1], a: [4, 0], m: [8, 2], r: [1, 0] },
+  { d: "2026-05-24", h: [3, 0], a: [7, 0], m: [6, 0], r: [0, 0] },
+  // May 25 - May 31
+  { d: "2026-05-25", h: [1, 1], a: [5, 0], m: [2, 0], r: [1, 0] },
+  { d: "2026-05-26", h: [8, 0], a: [6, 0], m: [10, 0], r: [0, 0] },
+  { d: "2026-05-27", h: [6, 0], a: [5, 1], m: [11, 2], r: [1, 0] },
+  { d: "2026-05-28", h: [11, 1], a: [4, 0], m: [9, 2], r: [4, 0] },
+  { d: "2026-05-29", h: [8, 1], a: [6, 0], m: [11, 1], r: [1, 0] },
+  { d: "2026-05-30", h: [5, 0], a: [3, 1], m: [12, 1], r: [0, 1] },
+  { d: "2026-05-31", h: [4, 0], a: [9, 1], m: [10, 2], r: [0, 0] },
+  // June 01 - June 07
+  { d: "2026-06-01", h: [10, 5], a: [11, 3], m: [1, 1], r: [1, 0] },
+  { d: "2026-06-02", h: [8, 3], a: [8, 3], m: [6, 2], r: [2, 1] },
+  { d: "2026-06-03", h: [14, 7], a: [4, 1], m: [3, 1], r: [0, 0] },
+  { d: "2026-06-04", h: [10, 5], a: [10, 4], m: [2, 3], r: [0, 1] },
+  { d: "2026-06-05", h: [11, 4], a: [7, 7], m: [15, 7], r: [2, 1] },
+  { d: "2026-06-06", h: [13, 6], a: [7, 8], m: [5, 10], r: [0, 0] },
+  { d: "2026-06-07", h: [7, 6], a: [7, 5], m: [3, 0], r: [0, 1] },
+  // June 08 - June 14
+  { d: "2026-06-08", h: [16, 0], a: [2, 0], m: [5, 0], r: [0, 0] },
+  { d: "2026-06-09", h: [11, 0], a: [9, 0], m: [6, 0], r: [2, 0] },
+  { d: "2026-06-10", h: [23, 0], a: [8, 0], m: [5, 0], r: [0, 0] },
+  { d: "2026-06-11", h: [24, 0], a: [8, 0], m: [5, 0], r: [0, 0] },
+  { d: "2026-06-12", h: [25, 0], a: [3, 0], m: [1, 0], r: [0, 0] },
+  { d: "2026-06-13", h: [22, 0], a: [5, 3], m: [2, 0], r: [1, 0] },
+  { d: "2026-06-14", h: [12, 1], a: [13, 1], m: [5, 3], r: [0, 1] }
 ];
+
+const INITIAL_PORTAL_REPORTS: PortalReportRow[] = [];
+RAW_PORTAL_LEAL_DATA.forEach((raw, index) => {
+  const portalsMap = [
+    { name: "Housing", metrics: raw.h },
+    { name: "99 Acres", metrics: raw.a },
+    { name: "Magicbricks", metrics: raw.m },
+    { name: "Roof&floor", metrics: raw.r }
+  ];
+  
+  portalsMap.forEach((p, pIdx) => {
+    INITIAL_PORTAL_REPORTS.push({
+      id: `p-rep-seed-${index}-${pIdx}`,
+      date: raw.d,
+      portal: p.name,
+      project: "Skyline Residency", // default to main active project
+      generated: p.metrics[0],
+      svs: p.metrics[1],
+      svc: p.metrics[1],
+      walkin: 0,
+      gross: 0,
+      net: 0,
+      createdAt: new Date(`${raw.d}T09:00:00Z`).toISOString()
+    });
+  });
+});
 
 const INITIAL_TARGET_BUDGETS: TargetBudgetRow[] = [
   {
@@ -1205,6 +1231,14 @@ export const dataService = {
 
   // --- Portal Reports ---
   async getPortalReports(): Promise<PortalReportRow[]> {
+    const SEED_VERSION_KEY = "portal_reports_seeded_v3";
+    if (typeof localStorage !== "undefined") {
+      if (!localStorage.getItem(SEED_VERSION_KEY)) {
+        localStorage.setItem(KEYS.PORTAL_REPORTS, JSON.stringify(INITIAL_PORTAL_REPORTS));
+        localStorage.setItem(SEED_VERSION_KEY, "true");
+      }
+    }
+
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {

@@ -495,6 +495,11 @@ export default function App() {
     await loadAllDatabaseStates();
   };
 
+  const handleImportPortalReports = async (importedPortals: PortalReportRow[]) => {
+    await Promise.all(importedPortals.map((p) => dataService.savePortalReport(p)));
+    await loadAllDatabaseStates();
+  };
+
   const mappedPerformanceCampaigns: Campaign[] = (campaignPerformances || [])
     .filter(perf => perf && perf.campaignName)
     .map((perf) => {
@@ -707,7 +712,7 @@ export default function App() {
               {/* Dashboard btn */}
               <button
                 onClick={() => setActiveTab("dashboard")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "dashboard"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -720,7 +725,7 @@ export default function App() {
               {/* Campaigns Manager btn */}
               <button
                 onClick={() => setActiveTab("campaigns")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "campaigns"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -733,7 +738,7 @@ export default function App() {
               {/* Creative Hub btn */}
               <button
                 onClick={() => setActiveTab("creatives")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "creatives"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -746,7 +751,7 @@ export default function App() {
               {/* AI Hub btn */}
               <button
                 onClick={() => setActiveTab("ai")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "ai"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -759,7 +764,7 @@ export default function App() {
               {/* Portal Leads btn */}
               <button
                 onClick={() => setActiveTab("portals")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "portals"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -772,7 +777,7 @@ export default function App() {
               {/* Exclusive Download Reports btn */}
               <button
                 onClick={() => setActiveTab("download_reports")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "download_reports"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -785,7 +790,7 @@ export default function App() {
               {/* Google Sheets Sync btn */}
               <button
                 onClick={() => setActiveTab("sheets_sync")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "sheets_sync"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -798,7 +803,7 @@ export default function App() {
               {/* Campaign Upload & Change Log btn */}
               <button
                 onClick={() => setActiveTab("performance")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "performance"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -811,7 +816,7 @@ export default function App() {
               {/* Weekly Target Ledger btn */}
               <button
                 onClick={() => setActiveTab("targets")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "targets"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -824,7 +829,7 @@ export default function App() {
               {/* Rule Configuration btn */}
               <button
                 onClick={() => setActiveTab("rules")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "rules"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -838,7 +843,7 @@ export default function App() {
               <button
                 id="sidebar_roles_btn"
                 onClick={() => setActiveTab("roles")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                   activeTab === "roles"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
@@ -1010,6 +1015,7 @@ export default function App() {
                   onImportLeads={handleImportLeads}
                   onImportPerformance={handleImportPerformance}
                   onImportTargets={handleImportTargets}
+                  onImportPortalReports={handleImportPortalReports}
                 />
               )}
               {activeTab === "roles" && (

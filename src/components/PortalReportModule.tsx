@@ -3,16 +3,6 @@ import { PortalReportRow } from "../types";
 import { auth } from "../firebase";
 import * as XLSX from "xlsx";
 import {
-  authorizeGoogleWorkspace,
-  getCachedAccessToken,
-  getWorkspaceProfile,
-  clearWorkspaceAuth,
-  checkGoogleTokenStatus,
-  fetchSpreadsheetsFromDrive,
-  fetchSpreadsheetTabs,
-  fetchSpreadsheetRows
-} from "../services/googleService";
-import {
   Plus,
   Trash2,
   Calendar,
@@ -43,7 +33,8 @@ import {
   Columns,
   Link,
   UploadCloud,
-  AlertTriangle
+  AlertTriangle,
+  Settings
 } from "lucide-react";
 
 interface PortalReportModuleProps {
@@ -70,253 +61,136 @@ export default function PortalReportModule({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
 
-  // Source Selection (Offline Excel file vs Cloud Google Sheets)
-  const [sourceType, setSourceType] = useState<"offline" | "google">("offline");
+  // Dynamic list of active projects managed by the user
+  const [projectsList, setProjectsList] = useState<string[]>(() => {
+    const saved = localStorage.getItem("g_portal_projects");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return ["Skyline Residency", "Solar Expansion", "Eco Villas"];
+  });
 
-  // Google Authentication variables
-  const [authorized, setAuthorized] = useState<boolean>(false);
-  const [authToken, setAuthToken] = useState<string | null>(null);
-  const [profile, setProfile] = useState<{ email: string | null; name: string | null; photoUrl: string | null } | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authenticating, setAuthenticating] = useState<boolean>(false);
+  // Dynamic list of active portals managed by the user
+  const [portals, setPortals] = useState<string[]>(() => {
+    const saved = localStorage.getItem("g_portal_names");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return ["Housing", "99 Acres", "Magicbricks", "Roof&floor"];
+  });
 
-  // Google Spreadsheet States
-  const [files, setFiles] = useState<Array<{ id: string; name: string; modifiedTime: string }>>([]);
-  const [fileSearch, setFileSearch] = useState<string>("");
-  const [loadingFiles, setLoadingFiles] = useState<boolean>(false);
-  const [driveError, setDriveError] = useState<string | null>(null);
-
-  // Chosen Spreadsheet & worksheets/tabs
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
-  const [selectedFileName, setSelectedFileName] = useState<string>("");
-  const [tabs, setTabs] = useState<string[]>([]);
-  const [selectedTab, setSelectedTab] = useState<string>("");
-  const [loadingTabs, setLoadingTabs] = useState<boolean>(false);
-
-  // Raw rows loaded from Sheet
-  const [rawRows, setRawRows] = useState<string[][]>([]);
-  const [loadingRows, setLoadingRows] = useState<boolean>(false);
-  const [rowsError, setRowsError] = useState<string | null>(null);
-
-  // Column headers in sheet row
-  const [headers, setHeaders] = useState<string[]>([]);
-  // Manual Column mapping dictionary (e.g., date -> col index, project -> col index, etc.)
-  const [columnMapping, setColumnMapping] = useState<Record<string, number>>({});
-
-  // Auto-load token on mount
+  // Safe synchronization with storage
   useEffect(() => {
-    const activeToken = getCachedAccessToken();
-    if (activeToken) {
-      setAuthToken(activeToken);
-      setAuthorized(true);
-      setProfile(getWorkspaceProfile());
-      loadDriveFiles(activeToken);
-    }
-  }, []);
+    localStorage.setItem("g_portal_projects", JSON.stringify(projectsList));
+  }, [projectsList]);
 
-  const loadDriveFiles = async (token: string) => {
-    setLoadingFiles(true);
-    setDriveError(null);
-    try {
-      const spreadsheets = await fetchSpreadsheetsFromDrive(token);
-      setFiles(spreadsheets);
-    } catch (err: any) {
-      console.error(err);
-      setDriveError(err.message || "Failed retrieving spreadsheets list from Google Drive.");
-    } finally {
-      setLoadingFiles(false);
-    }
-  };
-
-  const handleConnectGoogle = async () => {
-    setAuthenticating(true);
-    setAuthError(null);
-    try {
-      const data = await authorizeGoogleWorkspace();
-      if (data) {
-        setAuthToken(data.accessToken);
-        setAuthorized(true);
-        setProfile({
-          email: data.email,
-          name: data.name,
-          photoUrl: data.photoUrl
-        });
-        loadDriveFiles(data.accessToken);
-      }
-    } catch (err: any) {
-      console.error(err);
-      setAuthError(err.message || "Sign-in popup rejected or access denied.");
-    } finally {
-      setAuthenticating(false);
-    }
-  };
-
-  const handleDisconnectGoogle = () => {
-    clearWorkspaceAuth();
-    setAuthToken(null);
-    setAuthorized(false);
-    setProfile(null);
-    setFiles([]);
-    setSelectedFileId(null);
-    setSelectedFileName("");
-    setTabs([]);
-    setSelectedTab("");
-    setRawRows([]);
-    setHeaders([]);
-    setColumnMapping({});
-    setParsedRows([]);
-  };
-
-  const handleSelectSpreadsheet = async (fileId: string, fileName: string) => {
-    setSelectedFileId(fileId);
-    setSelectedFileName(fileName);
-    setLoadingTabs(true);
-    setRowsError(null);
-    setTabs([]);
-    setSelectedTab("");
-    setRawRows([]);
-    setHeaders([]);
-    setColumnMapping({});
-    setParsedRows([]);
-    
-    try {
-      if (authToken) {
-        const parsedTabs = await fetchSpreadsheetTabs(authToken, fileId);
-        setTabs(parsedTabs);
-        if (parsedTabs.length > 0) {
-          handleSelectTab(fileId, parsedTabs[0]);
-        }
-      }
-    } catch (err: any) {
-      console.error(err);
-      setRowsError(err.message || "Failed loading sub-sheets/tabs.");
-    } finally {
-      setLoadingTabs(false);
-    }
-  };
-
-  const handleSelectTab = async (fileId: string, tabName: string) => {
-    setSelectedTab(tabName);
-    setLoadingRows(true);
-    setRowsError(null);
-    setRawRows([]);
-    setHeaders([]);
-    setParsedRows([]);
-    
-    try {
-      if (authToken) {
-        const rows = await fetchSpreadsheetRows(authToken, fileId, tabName);
-        setRawRows(rows);
-        if (rows.length > 0) {
-          const extractedHeaders = rows[0].map(h => String(h || "").trim());
-          setHeaders(extractedHeaders);
-          
-          const dateIdx = findHeaderIndex(extractedHeaders, ["date", "configuration date", "day"]);
-          const projIdx = findHeaderIndex(extractedHeaders, ["project", "project name", "project trace", "property"]);
-          const portalIdx = findHeaderIndex(extractedHeaders, ["portal", "portal name", "source", "platform"]);
-          const genIdx = findHeaderIndex(extractedHeaders, ["generated leads", "leads generated", "generated", "leads", "lead count"]);
-          const svcIdx = findHeaderIndex(extractedHeaders, ["svc", "site visits conducted", "conducted site visits", "conducted", "site visits", "site visits conducted", "svc conducted"]);
-          const reasonIdx = findHeaderIndex(extractedHeaders, ["edit reason", "reason", "modification reason", "comment", "remarks"]);
-          
-          const mapping: Record<string, number> = {};
-          if (dateIdx !== -1) mapping.date = dateIdx;
-          if (projIdx !== -1) mapping.project = projIdx;
-          if (portalIdx !== -1) mapping.portal = portalIdx;
-          if (genIdx !== -1) mapping.leads = genIdx;
-          if (svcIdx !== -1) mapping.svc = svcIdx;
-          if (reasonIdx !== -1) mapping.reason = reasonIdx;
-          
-          setColumnMapping(mapping);
-        }
-      }
-    } catch (err: any) {
-      console.error(err);
-      setRowsError(err.message || "Failed retrieving rows array inside chosen worksheet.");
-    } finally {
-      setLoadingRows(false);
-    }
-  };
-
-  // Google Sheets rawRow-to-parsedRows mapper side-effect
   useEffect(() => {
-    if (sourceType !== "google" || rawRows.length < 2) {
-      return;
-    }
-    
-    const dateIdx = columnMapping.date;
-    const projIdx = columnMapping.project;
-    const portalIdx = columnMapping.portal;
-    const genIdx = columnMapping.leads;
-    const svcIdx = columnMapping.svc;
-    const reasonIdx = columnMapping.reason;
-    
-    if (dateIdx === undefined || projIdx === undefined || portalIdx === undefined) {
-      setParsedRows([]);
-      return;
-    }
-    
-    const rowsToPreview: any[] = [];
-    for (let i = 1; i < rawRows.length; i++) {
-      const row = rawRows[i];
-      if (!row || row.length === 0) continue;
-      
-      const isAllEmpty = row.every((val: any) => val === undefined || val === null || String(val).trim() === "");
-      if (isAllEmpty) continue;
-      
-      const rowDateRaw = String(row[dateIdx] || "").trim();
-      let rowDate = rowDateRaw;
-      
-      if (/^\d+(\.\d+)?$/.test(rowDateRaw)) {
-        const serial = parseFloat(rowDateRaw);
-        const dateObj = new Date((serial - 25569) * 86400 * 1000);
-        if (!isNaN(dateObj.getTime())) {
-          rowDate = dateObj.toISOString().split("T")[0];
-        }
-      } else {
-        const parts = rowDateRaw.split(/[-/]/);
-        if (parts.length === 3) {
-          if (parts[0].length === 4) {
-            rowDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-          } else if (parts[2].length === 4) {
-            rowDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-          }
-        }
-      }
-      
-      if (!rowDate) {
-        rowDate = new Date().toISOString().split("T")[0];
-      }
-      
-      const project = projIdx !== undefined && row[projIdx] ? String(row[projIdx]).trim() : "Skyline Residency";
-      const portalRaw = portalIdx !== undefined && row[portalIdx] ? String(row[portalIdx]).trim() : "Housing";
-      
-      let portal = portalRaw;
-      const pLower = portalRaw.toLowerCase();
-      if (pLower.includes("housing")) portal = "Housing";
-      else if (pLower.includes("99") || pLower.includes("acres")) portal = "99 Acres";
-      else if (pLower.includes("magic") || pLower.includes("brick")) portal = "Magicbricks";
-      else if (pLower.includes("roof") || pLower.includes("floor") || pLower.includes("rf")) portal = "Roof&floor";
-      
-      const generated = genIdx !== undefined ? parseInt(String(row[genIdx])) || 0 : 0;
-      const svc = svcIdx !== undefined ? parseInt(String(row[svcIdx])) || 0 : 0;
-      const editReason = reasonIdx !== undefined && row[reasonIdx] ? String(row[reasonIdx]).trim() : "Google Sheet Sync";
-      
-      rowsToPreview.push({
-        date: rowDate,
-        project,
-        portal,
-        generated,
-        svs: svc,
-        svc,
-        walkin: 0,
-        gross: 0,
-        net: 0,
-        editReason
+    localStorage.setItem("g_portal_names", JSON.stringify(portals));
+  }, [portals]);
+
+  // Collapsible configuration manager settings
+  const [showConfigSettings, setShowConfigSettings] = useState(false);
+  const [newProjectInput, setNewProjectInput] = useState("");
+  const [newPortalInput, setNewPortalInput] = useState("");
+
+  // Custom dialog states for confirmations and alerts inside iframes
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const [feedbackAlert, setFeedbackAlert] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  } | null>(null);
+
+  const handleAddProject = () => {
+    const name = newProjectInput.trim();
+    if (!name) return;
+    if (projectsList.includes(name)) {
+      setFeedbackAlert({
+        isOpen: true,
+        title: "Duplicate Venture Notice",
+        message: `The project "${name}" is already cataloged in the system. Please use a distinct name.`
       });
+      return;
     }
-    
-    setParsedRows(rowsToPreview);
-  }, [columnMapping, rawRows, sourceType]);
+    setProjectsList([...projectsList, name]);
+    setNewProjectInput("");
+  };
+
+  const handleDeleteProject = (projToDelete: string) => {
+    if (projectsList.length <= 1) {
+      setFeedbackAlert({
+        isOpen: true,
+        title: "Minimum Constraint Reached",
+        message: "You must retain at least one configured project for performance tracking and ledger logging."
+      });
+      return;
+    }
+    setConfirmDialog({
+      isOpen: true,
+      title: "Confirm Venture Removal",
+      message: `Are you absolutely sure you want to remove client project "${projToDelete}"? While existing logged daily rows are safely preserved, this project will immediately be hidden from active logging selectors and spreadsheet imports.`,
+      onConfirm: () => {
+        setProjectsList(projectsList.filter(p => p !== projToDelete));
+        if (formProject === projToDelete) {
+          setFormProject(projectsList.find(p => p !== projToDelete) || "");
+        }
+        if (filterProject === projToDelete) {
+          setFilterProject("all");
+        }
+        setConfirmDialog(null);
+      }
+    });
+  };
+
+  const handleAddPortal = () => {
+    const name = newPortalInput.trim();
+    if (!name) return;
+    if (portals.includes(name)) {
+      setFeedbackAlert({
+        isOpen: true,
+        title: "Platform Duplicate",
+        message: `The listing portal "${name}" is already configured. please enter a unique marketing channel.`
+      });
+      return;
+    }
+    setPortals([...portals, name]);
+    setNewPortalInput("");
+  };
+
+  const handleDeletePortal = (portalToDelete: string) => {
+    if (portals.length <= 1) {
+      setFeedbackAlert({
+        isOpen: true,
+        title: "Minimum Constraint Reached",
+        message: "At least one active channel/portal source must be enabled to collect daily metrics rows."
+      });
+      return;
+    }
+    setConfirmDialog({
+      isOpen: true,
+      title: "Remove Digital Channel",
+      message: `Are you sure you want to delete "${portalToDelete}"? Custom form metrics for this channel will no longer be visible in new records.`,
+      onConfirm: () => {
+        setPortals(portals.filter(p => p !== portalToDelete));
+        if (filterPortal === portalToDelete) {
+          setFilterPortal("all");
+        }
+        setConfirmDialog(null);
+      }
+    });
+  };
 
   // Expanded row details for history/reasons
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
@@ -326,23 +200,15 @@ export default function PortalReportModule({
   const [formProject, setFormProject] = useState("Skyline Residency");
   const [formReason, setFormReason] = useState("");
 
-  // Metrics for each of the 4 defined portals
-  const [housingLeads, setHousingLeads] = useState(0);
-  const [housingSvc, setHousingSvc] = useState(0);
-
-  const [acresLeads, setAcresLeads] = useState(0);
-  const [acresSvc, setAcresSvc] = useState(0);
-
-  const [mbLeads, setMbLeads] = useState(0);
-  const [mbSvc, setMbSvc] = useState(0);
-
-  const [rfLeads, setRfLeads] = useState(0);
-  const [rfSvc, setRfSvc] = useState(0);
+  // Map of portal name -> metrics { leads, allocation, svc, booked }
+  const [portalMetricsForm, setPortalMetricsForm] = useState<{
+    [key: string]: { leads: number; allocation: number; svc: number; booked: number };
+  }>({});
 
   // Top Dashboard Filters
-  const [filterMonth, setFilterMonth] = useState("2026-05"); // Defaulting to May, 2026 as in screen
+  const [filterMonth, setFilterMonth] = useState("2026-06"); // Set default to June, 2026 based on real current date
   const [filterProject, setFilterProject] = useState("all");
-  const [filterPortal, setFilterPortal] = useState("all"); // "all", "Housing", "99 Acres", "Magicbricks", "Roof&floor"
+  const [filterPortal, setFilterPortal] = useState("all"); // "all" or specific portal name string
 
   // Excel Spreadsheet Mapper Helper
   const findHeaderIndex = (headers: string[], possibleNames: string[]) => {
@@ -389,16 +255,141 @@ export default function PortalReportModule({
 
         const headers = jsonData[0].map((h: any) => String(h || "").trim());
 
-        // Find matches
+        // Support for Horizontal Layout (multiple portals represented as columns side-by-side)
+        const isHorizontalLayout = headers.some(h => {
+          const l = h.toLowerCase();
+          return l.includes("housing") || l.includes("99 acres") || l.includes("magicbricks") || l.includes("roof");
+        }) || (jsonData[1] && jsonData[1].some((h: any) => {
+          const l = String(h || "").toLowerCase();
+          return l.includes("housing") || l.includes("99 acres") || l.includes("magicbricks") || l.includes("roof");
+        }));
+
+        if (isHorizontalLayout) {
+          let dateIndex = -1;
+          for (let rowIdx = 0; rowIdx < Math.min(jsonData.length, 3); rowIdx++) {
+            const hRow = jsonData[rowIdx];
+            if (!hRow) continue;
+            dateIndex = hRow.findIndex(val => {
+              const str = String(val || "").toLowerCase();
+              return str.includes("date") || str === "day";
+            });
+            if (dateIndex !== -1) break;
+          }
+          if (dateIndex === -1) {
+            dateIndex = 1; // logical fallback index
+          }
+
+          let hLeadsIdx = dateIndex + 1;
+          let hSvcIdx = dateIndex + 2;
+          let aLeadsIdx = dateIndex + 3;
+          let aSvcIdx = dateIndex + 4;
+          let mLeadsIdx = dateIndex + 5;
+          let mSvcIdx = dateIndex + 6;
+          let rLeadsIdx = dateIndex + 7;
+          let rSvcIdx = dateIndex + 8;
+
+          for (let rowIdx = 0; rowIdx < Math.min(jsonData.length, 3); rowIdx++) {
+            const hRow = jsonData[rowIdx];
+            if (!hRow) continue;
+            hRow.forEach((val, colIdx) => {
+              const str = String(val || "").toLowerCase();
+              if (str.includes("housing")) {
+                hLeadsIdx = colIdx;
+                hSvcIdx = colIdx + 1;
+              } else if (str.includes("99 acres") || str.includes("99acres")) {
+                aLeadsIdx = colIdx;
+                aSvcIdx = colIdx + 1;
+              } else if (str.includes("magicbricks") || str.includes("magic")) {
+                mLeadsIdx = colIdx;
+                mSvcIdx = colIdx + 1;
+              } else if (str.includes("roof") || str.includes("floor") || str.includes("roof&floor")) {
+                rLeadsIdx = colIdx;
+                rSvcIdx = colIdx + 1;
+              }
+            });
+          }
+
+          const rowsToPreview: any[] = [];
+          for (let i = 2; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            if (!row || row.length === 0) continue;
+
+            const rowDateRaw = String(row[dateIndex] || "").trim();
+            if (!rowDateRaw) continue;
+
+            const rowDateRawLower = rowDateRaw.toLowerCase();
+            if (
+              rowDateRawLower.includes("total") || 
+              rowDateRawLower.includes("week") || 
+              (rowDateRawLower.includes("may") && rowDateRawLower.includes("-")) ||
+              (rowDateRawLower.includes("june") && rowDateRawLower.includes("-"))
+            ) {
+              continue; // Skip calculated weekly/summary rows
+            }
+
+            let rowDate = rowDateRaw;
+            if (/^\d+(\.\d+)?$/.test(rowDateRaw)) {
+              const serial = parseFloat(rowDateRaw);
+              const dateObj = new Date((serial - 25569) * 86450 * 1000);
+              if (!isNaN(dateObj.getTime())) {
+                rowDate = dateObj.toISOString().split("T")[0];
+              }
+            } else {
+              const parts = rowDateRaw.split(/[-/.]/);
+              if (parts.length === 3) {
+                if (parts[0].length === 4) {
+                  rowDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                } else if (parts[2].length === 4) {
+                  rowDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                }
+              }
+            }
+
+            const portalChannels = [
+              { name: "Housing", genIdx: hLeadsIdx, svcIdx: hSvcIdx },
+              { name: "99 Acres", genIdx: aLeadsIdx, svcIdx: aSvcIdx },
+              { name: "Magicbricks", genIdx: mLeadsIdx, svcIdx: mSvcIdx },
+              { name: "Roof&floor", genIdx: rLeadsIdx, svcIdx: rSvcIdx }
+            ];
+
+            portalChannels.forEach(chan => {
+              const generated = parseInt(String(row[chan.genIdx] || "")) || 0;
+              const svc = parseInt(String(row[chan.svcIdx] || "")) || 0;
+
+              rowsToPreview.push({
+                date: rowDate,
+                project: "Skyline Residency", // fall back to standard project tracer
+                portal: chan.name,
+                generated,
+                svs: svc,
+                svc,
+                walkin: 0,
+                gross: 0,
+                net: 0,
+                editReason: "Spreadsheet Horizontal Bulk Upload"
+              });
+            });
+          }
+
+          if (rowsToPreview.length === 0) {
+            setUploadError("No valid rows could be parsed from the horizontal spreadsheet.");
+            return;
+          }
+
+          setParsedRows(rowsToPreview);
+          return;
+        }
+
+        // Traditional vertical mappings fallback
         const dateIdx = findHeaderIndex(headers, ["date", "configuration date", "day"]);
         const projIdx = findHeaderIndex(headers, ["project", "project name", "project trace", "property"]);
         const portalIdx = findHeaderIndex(headers, ["portal", "portal name", "source", "platform"]);
-        const genIdx = findHeaderIndex(headers, ["generated leads", "leads generated", "generated", "leads", "lead count"]);
-        const svsIdx = findHeaderIndex(headers, ["svs", "svs scheduled", "scheduled site visits", "scheduled", "site visits scheduled"]);
+        const genIdx = findHeaderIndex(headers, ["generated leads", "leads generated", "generated", "leads", "lead count", "total leads", "totalleads"]);
+        const svsIdx = findHeaderIndex(headers, ["svs", "svs scheduled", "scheduled site visits", "scheduled", "site visits scheduled", "allocation"]);
         const svcIdx = findHeaderIndex(headers, ["svc", "site visits conducted", "conducted site visits", "conducted", "site visits conducted", "site visits", "svc conducted"]);
         const walkinIdx = findHeaderIndex(headers, ["walkin", "walk-in", "walkins"]);
-        const grossIdx = findHeaderIndex(headers, ["gross", "gross booking", "gross bookings"]);
-        const netIdx = findHeaderIndex(headers, ["net", "net booking", "net bookings"]);
+        const grossIdx = findHeaderIndex(headers, ["gross", "gross booking", "gross bookings", "booked"]);
+        const netIdx = findHeaderIndex(headers, ["net", "net booking", "net bookings", "booked"]);
         const reasonIdx = findHeaderIndex(headers, ["edit reason", "reason", "modification reason", "comment", "remarks"]);
 
         if (dateIdx === -1 || projIdx === -1 || portalIdx === -1) {
@@ -528,12 +519,12 @@ export default function PortalReportModule({
   // Preloaded template downloader
   const downloadPortalTemplate = () => {
     const csvContent = "data:text/csv;charset=utf-8,"
-      + "Date,Project,Portal,Generated Leads,SVS,SVC,Walkin,Gross,Net,Edit Reason\n"
-      + "2026-05-01,Skyline Residency,Housing,5,5,2,0,0,0,Regular Log\n"
-      + "2026-05-01,Skyline Residency,99 Acres,6,6,1,0,0,0,Regular Log\n"
-      + "2026-05-01,Skyline Residency,Magicbricks,5,5,3,0,0,0,Regular Log\n"
-      + "2026-05-01,Skyline Residency,Roof&floor,0,0,0,0,0,0,Regular Log\n"
-      + "2026-05-02,Skyline Residency,Housing,1,1,2,0,0,0,Corrected report\n";
+      + "Date,Project,Portal,Total Leads,Allocation,SVC,Booked,Edit Reason\n"
+      + "2026-06-01,Skyline Residency,Housing,5,5,2,0,Regular Log\n"
+      + "2026-06-01,Skyline Residency,99 Acres,6,6,1,0,Regular Log\n"
+      + "2026-06-01,Skyline Residency,Magicbricks,5,5,3,0,Regular Log\n"
+      + "2026-06-01,Skyline Residency,Roof&floor,0,0,0,0,Regular Log\n"
+      + "2026-06-02,Skyline Residency,Housing,1,1,2,0,Corrected report\n";
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -619,25 +610,24 @@ export default function PortalReportModule({
   };
 
   // Extract list of existing projects for dropdown filters
-  const uniqueProjects = Array.from(new Set(portalReports.map((r) => r.project)));
+  const uniqueProjects = Array.from(new Set([...projectsList, ...portalReports.map((r) => r.project)]));
 
   // Open modal for editing or adding
   const handleOpenAdd = () => {
     setEditingDate(null);
     setEditingProject(null);
     setFormDate(new Date().toISOString().split("T")[0]);
-    setFormProject("Skyline Residency");
+    
+    // Default to first project in the list or fallback
+    const defaultProj = projectsList.length > 0 ? projectsList[0] : "Skyline Residency";
+    setFormProject(defaultProj);
     setFormReason("Initial regular upload");
 
-    setHousingLeads(0);
-    setHousingSvc(0);
-    setAcresLeads(0);
-    setAcresSvc(0);
-    setMbLeads(0);
-    setMbSvc(0);
-    setRfLeads(0);
-    setRfSvc(0);
-
+    const initialMetrics: any = {};
+    portals.forEach((pName) => {
+      initialMetrics[pName] = { leads: 0, allocation: 0, svc: 0, booked: 0 };
+    });
+    setPortalMetricsForm(initialMetrics);
     setShowAddModal(true);
   };
 
@@ -648,15 +638,16 @@ export default function PortalReportModule({
     setFormProject(projectStr);
     setFormReason("");
 
-    setHousingLeads(pivotedRow.Housing?.leads || 0);
-    setHousingSvc(pivotedRow.Housing?.svc || 0);
-    setAcresLeads(pivotedRow["99 Acres"]?.leads || 0);
-    setAcresSvc(pivotedRow["99 Acres"]?.svc || 0);
-    setMbLeads(pivotedRow.Magicbricks?.leads || 0);
-    setMbSvc(pivotedRow.Magicbricks?.svc || 0);
-    setRfLeads(pivotedRow["Roof&floor"]?.leads || 0);
-    setRfSvc(pivotedRow["Roof&floor"]?.svc || 0);
-
+    const initialMetrics: any = {};
+    portals.forEach((pName) => {
+      initialMetrics[pName] = {
+        leads: pivotedRow[pName]?.leads || 0,
+        allocation: pivotedRow[pName]?.allocation || 0,
+        svc: pivotedRow[pName]?.svc || 0,
+        booked: pivotedRow[pName]?.booked || 0,
+      };
+    });
+    setPortalMetricsForm(initialMetrics);
     setShowAddModal(true);
   };
 
@@ -667,17 +658,12 @@ export default function PortalReportModule({
     const activeEmail = auth?.currentUser?.email || "gouthamarun123@gmail.com";
     const editComment = formReason.trim() || (editingDate ? "Manual metric update" : "Regular log submission");
 
-    const portalsToSave = [
-      { name: "Housing", leads: housingLeads, svc: housingSvc },
-      { name: "99 Acres", leads: acresLeads, svc: acresSvc },
-      { name: "Magicbricks", leads: mbLeads, svc: mbSvc },
-      { name: "Roof&floor", leads: rfLeads, svc: rfSvc },
-    ];
+    for (const pName of portals) {
+      const metrics = portalMetricsForm[pName] || { leads: 0, allocation: 0, svc: 0, booked: 0 };
 
-    for (const item of portalsToSave) {
       // Find existing row to replace/edit or create new
       const existingRow = portalReports.find(
-        (r) => r.date === formDate && r.project === formProject && r.portal === item.name
+        (r) => r.date === formDate && r.project === formProject && r.portal === pName
       );
 
       const rId = existingRow ? existingRow.id : "p-rep-" + Math.random().toString(36).substring(2, 9);
@@ -685,13 +671,13 @@ export default function PortalReportModule({
         id: rId,
         date: formDate,
         project: formProject,
-        portal: item.name,
-        generated: item.leads,
-        svs: item.svc, // alignment helper for scheduling
-        svc: item.svc,
+        portal: pName,
+        generated: metrics.leads,
+        svs: metrics.allocation, // maps to allocation
+        svc: metrics.svc,         // maps to svc
         walkin: existingRow?.walkin || 0,
-        gross: existingRow?.gross || 0,
-        net: existingRow?.net || 0,
+        gross: metrics.booked,     // maps to booked
+        net: metrics.booked,
         createdAt: existingRow?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         editReason: editComment,
@@ -707,18 +693,22 @@ export default function PortalReportModule({
 
   // Delete all rows matching a specific date + project combination
   const handleDeleteBulkPortals = async (dateStr: string, projectStr: string) => {
-    if (!window.confirm(`Are you sure you want to delete all portal entries for ${dateStr} - ${projectStr}?`)) {
-      return;
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete All Portal Logs?",
+      message: `Are you sure you want to permanently delete all portal entries for ${dateStr} - ${projectStr}? This action cannot be undone.`,
+      onConfirm: async () => {
+        const rowsToDelete = portalReports.filter((r) => r.date === dateStr && r.project === projectStr);
+        for (const r of rowsToDelete) {
+          await onDeleteReport(r.id);
+        }
 
-    const rowsToDelete = portalReports.filter((r) => r.date === dateStr && r.project === projectStr);
-    for (const r of rowsToDelete) {
-      await onDeleteReport(r.id);
-    }
-
-    if (expandedDate === dateStr) {
-      setExpandedDate(null);
-    }
+        if (expandedDate === dateStr) {
+          setExpandedDate(null);
+        }
+        setConfirmDialog(null);
+      }
+    });
   };
 
   // Helper date conversions
@@ -756,7 +746,7 @@ export default function PortalReportModule({
     return dateStr;
   };
 
-  // Pivot calculations: Group daily portalReports by Date & Project
+  // Pivot calculations: Group daily portalReports by Date & Project, with dynamic portal initialization
   const pivotedData: { [key: string]: any } = {};
 
   portalReports.forEach((r) => {
@@ -772,20 +762,23 @@ export default function PortalReportModule({
       pivotedData[groupKey] = {
         date: r.date,
         project: r.project,
-        Housing: { leads: 0, svc: 0 },
-        "99 Acres": { leads: 0, svc: 0 },
-        Magicbricks: { leads: 0, svc: 0 },
-        "Roof&floor": { leads: 0, svc: 0 },
         rawRows: [] as PortalReportRow[],
       };
+      
+      // Initialize empty cells for all configured portals
+      portals.forEach((pName) => {
+        pivotedData[groupKey][pName] = { leads: 0, allocation: 0, svc: 0, booked: 0 };
+      });
     }
 
-    if (pivotedData[groupKey][r.portal]) {
-      pivotedData[groupKey][r.portal].leads += r.generated;
-      pivotedData[groupKey][r.portal].svc += r.svc;
-    } else {
-      pivotedData[groupKey][r.portal] = { leads: r.generated, svc: r.svc };
+    if (!pivotedData[groupKey][r.portal]) {
+      pivotedData[groupKey][r.portal] = { leads: 0, allocation: 0, svc: 0, booked: 0 };
     }
+
+    pivotedData[groupKey][r.portal].leads += (r.generated || 0);
+    pivotedData[groupKey][r.portal].allocation += (r.svs || 0);
+    pivotedData[groupKey][r.portal].svc += (r.svc || 0);
+    pivotedData[groupKey][r.portal].booked += (r.gross || 0);
 
     pivotedData[groupKey].rawRows.push(r);
   });
@@ -795,29 +788,129 @@ export default function PortalReportModule({
     a.date.localeCompare(b.date)
   );
 
-  // Compute overall summary totals
-  let totalHousingLeads = 0;
-  let totalHousingSvc = 0;
-  let totalAcresLeads = 0;
-  let totalAcresSvc = 0;
-  let totalMbLeads = 0;
-  let totalMbSvc = 0;
-  let totalRfLeads = 0;
-  let totalRfSvc = 0;
+  const getMondayDateKey = (dateStr: string): string => {
+    const parts = dateStr.split("-");
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const d = new Date(year, month, day);
+    const dayOfWeek = d.getDay();
+    const diff = d.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+    const monday = new Date(year, month, diff);
+    
+    const mYear = monday.getFullYear();
+    const mMonth = String(monday.getMonth() + 1).padStart(2, '0');
+    const mDay = String(monday.getDate()).padStart(2, '0');
+    return `${mYear}-${mMonth}-${mDay}`;
+  };
+
+  const formatWeekRangeLabel = (minStr: string, maxStr: string) => {
+    const fullMonthsMap: { [key: string]: string } = {
+      "01": "January", "02": "February", "03": "March", "04": "April", "05": "May", "06": "June",
+      "07": "July", "08": "August", "09": "September", "10": "October", "11": "November", "12": "December"
+    };
+
+    const parseDateInfo = (dateStr: string) => {
+      const p = dateStr.split("-");
+      const monthLabel = fullMonthsMap[p[1]] || "";
+      const d = parseInt(p[2], 10);
+      const paddedDay = d < 10 ? "0" + d : String(d);
+      return { monthLabel, paddedDay };
+    };
+
+    const minInfo = parseDateInfo(minStr);
+    const maxInfo = parseDateInfo(maxStr);
+
+    if (minInfo.monthLabel === maxInfo.monthLabel) {
+      return `${minInfo.monthLabel} ${minInfo.paddedDay} - ${minInfo.monthLabel} ${maxInfo.paddedDay}`;
+    } else {
+      return `${minInfo.monthLabel} ${minInfo.paddedDay} - ${maxInfo.monthLabel} ${maxInfo.paddedDay}`;
+    }
+  };
+
+  const calculateWeeklySubtotal = (weekRows: any[]) => {
+    const minDate = weekRows[0].date;
+    const maxDate = weekRows[weekRows.length - 1].date;
+    const rangeLabel = formatWeekRangeLabel(minDate, maxDate);
+    
+    const subtotal: any = {
+      date: rangeLabel,
+      project: "Weekly Total",
+      isWeeklySummary: true,
+    };
+
+    portals.forEach((pName) => {
+      subtotal[pName] = { leads: 0, allocation: 0, svc: 0, booked: 0 };
+    });
+    
+    weekRows.forEach((r) => {
+      portals.forEach((pName) => {
+        if (r[pName]) {
+          subtotal[pName].leads += r[pName].leads || 0;
+          subtotal[pName].allocation += r[pName].allocation || 0;
+          subtotal[pName].svc += r[pName].svc || 0;
+          subtotal[pName].booked += r[pName].booked || 0;
+        }
+      });
+    });
+    
+    return subtotal;
+  };
+
+  const tableRenderRows: any[] = [];
+  let currentWeekRows: any[] = [];
+  let currentWeekKey: string | null = null;
 
   sortedPivotedRows.forEach((row) => {
-    totalHousingLeads += row.Housing?.leads || 0;
-    totalHousingSvc += row.Housing?.svc || 0;
-    totalAcresLeads += row["99 Acres"]?.leads || 0;
-    totalAcresSvc += row["99 Acres"]?.svc || 0;
-    totalMbLeads += row.Magicbricks?.leads || 0;
-    totalMbSvc += row.Magicbricks?.svc || 0;
-    totalRfLeads += row["Roof&floor"]?.leads || 0;
-    totalRfSvc += row["Roof&floor"]?.svc || 0;
+    const weekKey = getMondayDateKey(row.date);
+    
+    if (currentWeekKey !== null && weekKey !== currentWeekKey) {
+      if (currentWeekRows.length > 0) {
+        const sub = calculateWeeklySubtotal(currentWeekRows);
+        tableRenderRows.push(...currentWeekRows);
+        tableRenderRows.push(sub);
+        currentWeekRows = [];
+      }
+    }
+    
+    currentWeekKey = weekKey;
+    currentWeekRows.push(row);
   });
 
-  const totalOverallLeads = totalHousingLeads + totalAcresLeads + totalMbLeads + totalRfLeads;
-  const totalOverallSvc = totalHousingSvc + totalAcresSvc + totalMbSvc + totalRfSvc;
+  if (currentWeekRows.length > 0) {
+    const sub = calculateWeeklySubtotal(currentWeekRows);
+    tableRenderRows.push(...currentWeekRows);
+    tableRenderRows.push(sub);
+  }
+
+  // Compute overall summary totals dynamically across configured portals
+  const overallTotals: { [key: string]: { leads: number; allocation: number; svc: number; booked: number } } = {};
+  portals.forEach((pName) => {
+    overallTotals[pName] = { leads: 0, allocation: 0, svc: 0, booked: 0 };
+  });
+
+  sortedPivotedRows.forEach((row) => {
+    portals.forEach((pName) => {
+      if (row[pName]) {
+        overallTotals[pName].leads += row[pName].leads || 0;
+        overallTotals[pName].allocation += row[pName].allocation || 0;
+        overallTotals[pName].svc += row[pName].svc || 0;
+        overallTotals[pName].booked += row[pName].booked || 0;
+      }
+    });
+  });
+
+  let totalOverallLeads = 0;
+  let totalOverallAllocation = 0;
+  let totalOverallSvc = 0;
+  let totalOverallBooked = 0;
+
+  portals.forEach((pName) => {
+    totalOverallLeads += overallTotals[pName].leads;
+    totalOverallAllocation += overallTotals[pName].allocation;
+    totalOverallSvc += overallTotals[pName].svc;
+    totalOverallBooked += overallTotals[pName].booked;
+  });
 
   // Retrieve min and max dates of displayed records for bottom label
   const displayedDates = sortedPivotedRows.map((r) => r.date);
@@ -841,9 +934,27 @@ export default function PortalReportModule({
           <h1 className="text-xl font-bold text-slate-800 tracking-tight">Portal Leads and SVC</h1>
           <p className="text-xs text-slate-450 mt-1">Group and review daily leads and site visits conducted across property portals.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => setShowBulkUploadSection(!showBulkUploadSection)}
+            onClick={() => {
+              setShowConfigSettings(!showConfigSettings);
+              setShowBulkUploadSection(false);
+            }}
+            className={`flex items-center gap-2 font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer border ${
+              showConfigSettings
+                ? "bg-indigo-50 border-indigo-250 text-indigo-700"
+                : "bg-white border-slate-200 hover:bg-slate-100 text-slate-705"
+            }`}
+            type="button"
+          >
+            <Settings size={14} className="text-indigo-650" />
+            <span>Manage Portals &amp; Projects</span>
+          </button>
+          <button
+            onClick={() => {
+              setShowBulkUploadSection(!showBulkUploadSection);
+              setShowConfigSettings(false);
+            }}
             className={`flex items-center gap-2 font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer border ${
               showBulkUploadSection
                 ? "bg-indigo-50 border-indigo-250 text-indigo-700"
@@ -851,8 +962,8 @@ export default function PortalReportModule({
             }`}
             type="button"
           >
-            <Globe size={14} className="text-indigo-650" />
-            <span>Browse &amp; Sync Marketing Data</span>
+            <FileSpreadsheet size={14} className="text-indigo-650" />
+            <span>Bulk Upload Portal Data</span>
           </button>
           <button
             onClick={handleOpenAdd}
@@ -875,10 +986,12 @@ export default function PortalReportModule({
           <div>
             <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-450 font-display">Active Channels Reporting</span>
             <div className="flex items-baseline gap-1 mt-0.5">
-              <span className="text-2xl font-bold text-slate-800 tracking-tight font-mono">4</span>
+              <span className="text-2xl font-bold text-slate-800 tracking-tight font-mono">{portals.length}</span>
               <span className="text-xs text-indigo-700 font-bold bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded">Core Portals</span>
             </div>
-            <p className="text-[10.5px] text-slate-500 mt-1 font-sans">Housing, 99 Acres, Magicbricks, Roof&amp;Floor</p>
+            <p className="text-[10.5px] text-slate-500 mt-1 font-sans line-clamp-1 truncate max-w-[200px]" title={portals.join(", ")}>
+              {portals.join(", ")}
+            </p>
           </div>
         </div>
 
@@ -913,12 +1026,124 @@ export default function PortalReportModule({
         </div>
       </div>
 
+      {showConfigSettings && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 animate-fade-in" id="portal-config-settings-card">
+          <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Manage Custom Projects and Portals</h3>
+              <p className="text-xs text-slate-500 mt-0.5 font-sans">Define your custom real estate projects and property listings portals to customize filters and manual entry inputs.</p>
+            </div>
+            <button
+              onClick={() => setShowConfigSettings(false)}
+              className="text-slate-400 hover:text-slate-650 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* 1. Projects Column */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Building2 className="text-indigo-600 animate-pulse" size={16} />
+                <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700">Project Master List</span>
+              </div>
+              <p className="text-[11px] text-slate-500">Currently active real estate ventures. Removing a project will hide it from active dropdowns but preserves historic listings data.</p>
+              
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="E.g., Grand Plaza, Central Park"
+                  value={newProjectInput}
+                  onChange={(e) => setNewProjectInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddProject();
+                  }}
+                  className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-hidden text-slate-800 font-medium font-sans focus:border-indigo-400 focus:bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddProject}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-lg transition-all cursor-pointer"
+                >
+                  Add Project
+                </button>
+              </div>
+
+              <div className="border border-slate-150 rounded-xl divide-y divide-slate-100 max-h-[220px] overflow-y-auto bg-slate-50/30">
+                {projectsList.map((proj) => (
+                  <div key={proj} className="flex items-center justify-between p-2.5 px-3 bg-white hover:bg-slate-50 transition-colors">
+                    <span className="text-xs font-bold text-slate-800">{proj}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteProject(proj)}
+                      className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg transition-all cursor-pointer"
+                      title={`Remove ${proj}`}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 2. Portals Column */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Globe className="text-indigo-600" size={16} />
+                <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700">Portals &amp; Channels Master List</span>
+              </div>
+              <p className="text-[11px] text-slate-500">Property search engines and sources. Adding a platform dynamically creates Leads, Alloc, SVC, and Booked columns in the reports table.</p>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="E.g., MagicBricks, CommonFloor"
+                  value={newPortalInput}
+                  onChange={(e) => setNewPortalInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddPortal();
+                  }}
+                  className="flex-1 p-2 bg-slate-55 border border-slate-200 rounded-lg text-xs outline-hidden text-slate-800 font-medium font-sans focus:border-indigo-400 focus:bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddPortal}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-lg transition-all cursor-pointer"
+                >
+                  Add Platform
+                </button>
+              </div>
+
+              <div className="border border-slate-150 rounded-xl divide-y divide-slate-100 max-h-[220px] overflow-y-auto bg-slate-50/30">
+                {portals.map((pName) => (
+                  <div key={pName} className="flex items-center justify-between p-2.5 px-3 bg-white hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                      <span className="text-xs font-bold text-slate-800">{pName}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePortal(pName)}
+                      className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg transition-all cursor-pointer"
+                      title={`Remove ${pName}`}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showBulkUploadSection && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 animate-fade-in" id="portal-bulk-upload-card">
           <div className="flex justify-between items-center pb-3 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-bold text-slate-900">Sync Portal Performance Ledger</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Upload a manual file or connect your Google Workspace environment to sync live marketing data.</p>
+              <p className="text-xs text-slate-500 mt-0.5">Upload a manual file to sync live marketing data.</p>
             </div>
             <button
               onClick={() => setShowBulkUploadSection(false)}
@@ -928,194 +1153,69 @@ export default function PortalReportModule({
             </button>
           </div>
 
-          {/* SOURCE TABS switcher */}
-          <div className="flex border border-slate-200 p-1 bg-slate-50 rounded-xl max-w-md">
-            <button
-              type="button"
-              onClick={() => {
-                setSourceType("offline");
-                setUploadError(null);
-                setUploadSuccessMessage(null);
-              }}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                sourceType === "offline"
-                  ? "bg-white text-indigo-705 shadow-2s border border-slate-200"
-                  : "text-slate-500 hover:text-slate-805"
-              }`}
-            >
-              <Upload size={13} />
-              <span>Offline Excel/CSV</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSourceType("google");
-                setUploadError(null);
-                setUploadSuccessMessage(null);
-              }}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                sourceType === "google"
-                  ? "bg-white text-indigo-705 shadow-2s border border-slate-200"
-                  : "text-slate-500 hover:text-slate-855"
-              }`}
-            >
-              <Globe size={13} className="text-emerald-555" />
-              <span>Browse &amp; Sync Google Sheets</span>
-            </button>
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {sourceType === "google" ? (
-              <div className="md:col-span-1 space-y-4">
-                {/* Connection Box */}
-                {!authorized ? (
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 text-center space-y-3.5 shadow-2xs flex flex-col items-center justify-center min-h-[160px]">
-                    <Globe className="text-slate-400 animate-pulse" size={28} />
-                    <div>
-                      <p className="text-xs font-bold text-slate-850">Authorization Required</p>
-                      <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">Connect your Google account safely to browse and select marketing sheets.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleConnectGoogle}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                    >
-                      <Upload size={13} />
-                      <span>Authenticate Google Account</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3.5 shadow-2xs">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span className="text-[10px] font-extrabold uppercase text-slate-500 font-mono">Google Live Connected</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleDisconnectGoogle}
-                        className="text-[9px] text-rose-600 hover:underline font-bold"
-                      >
-                        Disconnect
-                      </button>
-                    </div>
-
-                    {/* Spreadsheet selector */}
-                    <div className="space-y-1.5 text-xs">
-                      <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">1. Select Google Spreadsheet</label>
-                      <select
-                        value={selectedFileId || ""}
-                        onChange={(e) => {
-                          const fileId = e.target.value;
-                          const found = files.find(f => f.id === fileId);
-                          handleSelectSpreadsheet(fileId, found ? found.name : "");
-                        }}
-                        className="w-full p-2 bg-slate-50 border border-slate-250 rounded-lg text-slate-705 outline-hidden font-bold cursor-pointer hover:bg-slate-100/50"
-                      >
-                        <option value="">-- Choose Marketing Spreadsheet --</option>
-                        {files.map((sheet) => (
-                          <option key={sheet.id} value={sheet.id}>
-                            {sheet.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Tab Selection */}
-                    {selectedFileId && (
-                      <div className="space-y-1.5 text-xs animate-slide-up">
-                        <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">2. Choose Sheet Tab</label>
-                        <select
-                          value={selectedTab}
-                          onChange={(e) => handleSelectTab(selectedFileId, e.target.value)}
-                          className="w-full p-2 bg-slate-50 border border-slate-250 rounded-lg text-slate-705 outline-hidden font-bold cursor-pointer hover:bg-slate-100/50"
-                        >
-                          <option value="">-- Choose Sheet Tab/Page --</option>
-                          {tabs.map((tab) => (
-                            <option key={tab} value={tab}>
-                              {tab}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="bg-emerald-50/45 border border-emerald-150 rounded-xl p-4 space-y-2 text-xs">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1 font-mono">
-                    <History size={12} className="text-emerald-600" />
-                    Bimodal Auto Mapping
-                  </span>
-                  <p className="text-slate-600 leading-relaxed text-[11px]">
-                    Google sync maps column fields (Date, Project, Portal, Leads, SVC) and lists data preview instantly in the next window pane for quick human approval before database record commits.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="md:col-span-1 space-y-4">
-                <div
-                  className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[160px] ${
-                    isDragOver
-                      ? "border-indigo-500 bg-indigo-50/30 text-indigo-705"
-                      : "border-slate-250 bg-slate-50/50 hover:bg-slate-50 text-slate-600"
-                  }`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setIsDragOver(true);
-                  }}
-                  onDragLeave={() => setIsDragOver(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setIsDragOver(false);
-                    const file = e.dataTransfer.files?.[0];
+            <div className="md:col-span-1 space-y-4">
+              <div
+                className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[160px] ${
+                  isDragOver
+                    ? "border-indigo-500 bg-indigo-50/30 text-indigo-705"
+                    : "border-slate-250 bg-slate-50/50 hover:bg-slate-50 text-slate-600"
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(true);
+                }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) handleFileImport(file);
+                }}
+                onClick={() => document.getElementById("portal-spreadsheet-file-picker")?.click()}
+              >
+                <input
+                  id="portal-spreadsheet-file-picker"
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
                     if (file) handleFileImport(file);
                   }}
-                  onClick={() => document.getElementById("portal-spreadsheet-file-picker")?.click()}
-                >
-                  <input
-                    id="portal-spreadsheet-file-picker"
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleFileImport(file);
-                    }}
-                  />
-                  <Upload size={32} className={`mb-3 ${isDragOver ? "text-indigo-600 animate-bounce" : "text-slate-400"}`} />
-                  <p className="text-xs font-bold text-slate-705">
-                    {fileName ? "Selected:" : "Drag & drop file here, or"} <span className="text-indigo-650 underline">browse</span>
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
-                    Supports .xlsx, .xls, .csv
-                  </p>
-                  {fileName && (
-                    <span className="mt-2 text-[11px] font-mono font-bold text-slate-800 bg-white px-2 py-0.5 border border-slate-200 rounded">
-                      {fileName}
-                    </span>
-                  )}
-                </div>
-
-                <div className="bg-amber-50/40 border border-amber-100 rounded-xl p-4 space-y-2 text-xs">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 flex items-center gap-1 font-mono">
-                    <Info size={12} className="text-amber-600" />
-                    Required spreadsheet columns
+                />
+                <Upload size={32} className={`mb-3 ${isDragOver ? "text-indigo-600 animate-bounce" : "text-slate-400"}`} />
+                <p className="text-xs font-bold text-slate-705">
+                  {fileName ? "Selected:" : "Drag & drop file here, or"} <span className="text-indigo-650 underline">browse</span>
+                </p>
+                <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
+                  Supports .xlsx, .xls, .csv
+                </p>
+                {fileName && (
+                  <span className="mt-2 text-[11px] font-mono font-bold text-slate-800 bg-white px-2 py-0.5 border border-slate-200 rounded">
+                    {fileName}
                   </span>
-                  <p className="text-slate-600 leading-relaxed text-[11px]">
-                    The uploaded spreadsheet should contain headers matching: <strong className="text-slate-800 font-bold">Date</strong>, <strong className="text-slate-800 font-bold">Project</strong>, <strong className="text-slate-800 font-bold">Portal Name</strong>, and numeric metric values for <strong className="text-slate-850">Leads</strong> and <strong className="text-indigo-700">SVC/Site Visits</strong>.
-                  </p>
-                  <button
-                    onClick={downloadPortalTemplate}
-                    type="button"
-                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 pt-1 cursor-pointer"
-                  >
-                    <Download size={11} />
-                    <span>Download Sample template</span>
-                  </button>
-                </div>
+                )}
               </div>
-            )}
+
+              <div className="bg-amber-50/40 border border-amber-100 rounded-xl p-4 space-y-2 text-xs">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 flex items-center gap-1 font-mono">
+                  <Info size={12} className="text-amber-600" />
+                  Required spreadsheet columns
+                </span>
+                <p className="text-slate-600 leading-relaxed text-[11px]">
+                  The uploaded spreadsheet should contain headers matching: <strong className="text-slate-800 font-bold">Date</strong>, <strong className="text-slate-800 font-bold">Project</strong>, <strong className="text-slate-800 font-bold">Portal Name</strong>, and numeric metric values for <strong className="text-slate-850">Leads</strong> and <strong className="text-indigo-700">SVC/Site Visits</strong>.
+                </p>
+                <button
+                  onClick={downloadPortalTemplate}
+                  type="button"
+                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 pt-1 cursor-pointer"
+                >
+                  <Download size={11} />
+                  <span>Download Sample template</span>
+                </button>
+              </div>
+            </div>
 
             <div className="md:col-span-2 space-y-4">
               {uploadError && (
@@ -1403,7 +1503,65 @@ export default function PortalReportModule({
               </thead>
 
               <tbody className="divide-y divide-slate-150 font-medium text-slate-705">
-                {sortedPivotedRows.map((row) => {
+                {tableRenderRows.map((row) => {
+                  if (row.isWeeklySummary) {
+                    const weeklyOverallLeads = (row.Housing?.leads || 0) + (row["99 Acres"]?.leads || 0) + (row.Magicbricks?.leads || 0) + (row["Roof&floor"]?.leads || 0);
+                    const weeklyOverallSvc = (row.Housing?.svc || 0) + (row["99 Acres"]?.svc || 0) + (row.Magicbricks?.svc || 0) + (row["Roof&floor"]?.svc || 0);
+                    
+                    return (
+                      <tr
+                        key={`summary__${row.date}`}
+                        className="bg-[#fbdbce]/30 hover:bg-[#fbdbce]/40 transition-all text-slate-900 font-extrabold border-t border-b border-[#edd1c5] select-all"
+                      >
+                        {/* 1. Date Cell */}
+                        <td className="p-3 border-r border-[#edd1c5] font-sans text-left text-slate-800 font-extrabold whitespace-nowrap bg-[#fbdbce]/10">
+                          {row.date}
+                        </td>
+
+                        {/* 2. Project Name Cell */}
+                        <td className="p-3 border-r border-[#edd1c5] font-sans text-center text-amber-900 font-extrabold bg-[#fbdbce]/25 uppercase tracking-wider text-[10px]/snug">
+                          Weekly Total
+                        </td>
+
+                        {/* Housing Metrics Cells */}
+                        {(filterPortal === "all" || filterPortal === "Housing") && (
+                          <>
+                            <td className="p-3 text-center border-r border-[#edd1c5] bg-amber-50/5 font-mono text-slate-900">{row.Housing?.leads}</td>
+                            <td className="p-3 text-center border-r border-[#edd1c5] bg-amber-50/5 font-mono text-slate-700">{row.Housing?.svc}</td>
+                          </>
+                        )}
+
+                        {/* 99 Acres Metrics Cells */}
+                        {(filterPortal === "all" || filterPortal === "99 Acres") && (
+                          <>
+                            <td className="p-3 text-center border-r border-[#edd1c5] bg-amber-50/5 font-mono text-slate-900">{row["99 Acres"]?.leads}</td>
+                            <td className="p-3 text-center border-r border-[#edd1c5] bg-amber-50/5 font-mono text-slate-700">{row["99 Acres"]?.svc}</td>
+                          </>
+                        )}
+
+                        {/* Magicbricks Metrics Cells */}
+                        {(filterPortal === "all" || filterPortal === "Magicbricks") && (
+                          <>
+                            <td className="p-3 text-center border-r border-[#edd1c5] bg-amber-50/5 font-mono text-slate-900">{row.Magicbricks?.leads}</td>
+                            <td className="p-3 text-center border-r border-[#edd1c5] bg-amber-50/5 font-mono text-slate-700">{row.Magicbricks?.svc}</td>
+                          </>
+                        )}
+
+                        {/* Roof&floor Metrics Cells */}
+                        {(filterPortal === "all" || filterPortal === "Roof&floor") && (
+                          <>
+                            <td className="p-3 text-center border-r border-[#edd1c5] bg-amber-50/5 font-mono text-slate-900">{row["Roof&floor"]?.leads}</td>
+                            <td className="p-3 text-center border-r border-slate-150 bg-amber-50/5 font-mono text-slate-700">{row["Roof&floor"]?.svc}</td>
+                          </>
+                        )}
+
+                        {/* Totals Metric Cells */}
+                        <td className="p-3 text-center bg-[#a29ce4]/10 border-r border-[#edd1c5] font-mono text-indigo-950 font-extrabold">{weeklyOverallLeads}</td>
+                        <td className="p-3 text-center bg-[#a29ce4]/10 font-mono text-indigo-950 font-extrabold">{weeklyOverallSvc}</td>
+                      </tr>
+                    );
+                  }
+
                   const housingRowLeads = row.Housing?.leads || 0;
                   const housingRowSvc = row.Housing?.svc || 0;
                   const acresRowLeads = row["99 Acres"]?.leads || 0;
@@ -1557,7 +1715,7 @@ export default function PortalReportModule({
                 })}
 
                 {/* SUMMARY ROAD MAP TOTALS ROW EXACTLY LIKE SCREENSHOT */}
-                <tr className="bg-[#fbdbce]/50 text-slate-900 border-t border-slate-200" style={{ fontWeight: "bold" }} id="table-summary-totals-row">
+                <tr className="bg-[#fbdbce]/50 text-slate-900 border-t border-slate-200 font-bold" id="table-summary-totals-row">
                   {/* Date range duration label (e.g. 01 May - 03 May) */}
                   <td className="p-3 border-r border-slate-150 align-middle text-slate-800 text-[11px] font-extrabold font-sans">
                     {durationLabel}
@@ -1568,41 +1726,23 @@ export default function PortalReportModule({
                     All Projects
                   </td>
 
-                  {/* Housing sum rows */}
-                  {(filterPortal === "all" || filterPortal === "Housing") && (
-                    <>
-                      <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fff5f2]/80 font-mono font-bold">{totalHousingLeads}</td>
-                      <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fff8f6]/80 font-mono font-bold">{totalHousingSvc}</td>
-                    </>
-                  )}
-
-                  {/* 99 Acres sum rows */}
-                  {(filterPortal === "all" || filterPortal === "99 Acres") && (
-                    <>
-                      <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fffbf9]/80 font-mono font-bold">{totalAcresLeads}</td>
-                      <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fffdfe]/80 font-mono font-bold">{totalAcresSvc}</td>
-                    </>
-                  )}
-
-                  {/* Magicbricks sum rows */}
-                  {(filterPortal === "all" || filterPortal === "Magicbricks") && (
-                    <>
-                      <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fffbf6]/80 font-mono font-bold">{totalMbLeads}</td>
-                      <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fffefa]/80 font-mono font-bold">{totalMbSvc}</td>
-                    </>
-                  )}
-
-                  {/* Roof&floor sum rows */}
-                  {(filterPortal === "all" || filterPortal === "Roof&floor") && (
-                    <>
-                      <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fffaf5]/80 font-mono font-bold">{totalRfLeads}</td>
-                      <td className="p-3 text-center border-r border-slate-150 bg-[#fffdfa]/80 font-mono font-bold">{totalRfSvc}</td>
-                    </>
-                  )}
+                  {portals.filter(p => filterPortal === "all" || filterPortal === p).map((p) => {
+                    const metrics = overallTotals[p] || { leads: 0, allocation: 0, svc: 0, booked: 0 };
+                    return (
+                      <React.Fragment key={p}>
+                        <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fff5f2]/80 font-mono text-[11px]">{metrics.leads}</td>
+                        <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fff8f6]/80 font-mono text-amber-700 text-[11px]">{metrics.allocation}</td>
+                        <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fff8f6]/80 font-mono text-emerald-700 text-[11px]">{metrics.svc}</td>
+                        <td className="p-3 text-center border-r border-slate-150 bg-[#fffdfa]/80 font-mono text-indigo-700 text-[11px]">{metrics.booked}</td>
+                      </React.Fragment>
+                    );
+                  })}
 
                   {/* Aggregated Totals summaries */}
-                  <td className="p-3 text-center bg-violet-100/70 border-r border-slate-150 font-mono font-extrabold text-[12px]">{totalOverallLeads}</td>
-                  <td className="p-3 text-center bg-violet-100/60 font-mono font-extrabold text-[12px]">{totalOverallSvc}</td>
+                  <td className="p-3 text-center bg-violet-100/70 border-r border-[#edd1c5] font-mono font-extrabold text-[12px]">{totalOverallLeads}</td>
+                  <td className="p-3 text-center bg-violet-100/70 border-r border-[#edd1c5] font-mono font-extrabold text-[12px] text-amber-850">{totalOverallAllocation}</td>
+                  <td className="p-3 text-center bg-violet-100/70 border-r border-[#edd1c5] font-mono font-extrabold text-[12px] text-emerald-850">{totalOverallSvc}</td>
+                  <td className="p-3 text-center bg-violet-100/60 font-mono font-extrabold text-[12px] text-indigo-850">{totalOverallBooked}</td>
                 </tr>
               </tbody>
             </table>
@@ -1650,128 +1790,94 @@ export default function PortalReportModule({
                     disabled={!!editingDate}
                     className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 outline-hidden font-bold disabled:opacity-50"
                   >
-                    <option value="Skyline Residency">Skyline Residency</option>
-                    <option value="Solar Expansion">Solar Expansion</option>
-                    <option value="Eco Villas">Eco Villas</option>
+                    {projectsList.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
                   </select>
                 </div>
               </div>
 
               {/* Portal metric inputs */}
-              <div className="space-y-3.5 border-t border-b border-slate-100 py-3 mt-1">
-                <span className="text-[10px] font-extrabold text-slate-405 uppercase tracking-wide block">Portal Metrics Allocation</span>
+              <div className="space-y-4 border-t border-b border-slate-100 py-3 mt-1 max-h-[300px] overflow-y-auto">
+                <span className="text-[10px] font-extrabold text-slate-405 uppercase tracking-wide block">Portal Metrics &amp; Allocation</span>
                 
-                {/* 1. Housing */}
-                <div className="grid grid-cols-3 items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#ffde59]" />
-                    <span className="font-bold text-slate-700">Housing</span>
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={housingLeads}
-                      onChange={(e) => setHousingLeads(parseInt(e.target.value) || 0)}
-                      placeholder="Leads"
-                      className="w-full p-2 bg-slate-5 w border border-slate-200 rounded-lg text-right font-mono"
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={housingSvc}
-                      onChange={(e) => setHousingSvc(parseInt(e.target.value) || 0)}
-                      placeholder="SVC"
-                      className="w-full p-2 bg-slate-5 w border border-slate-200 rounded-lg text-right font-mono text-emerald-650 font-bold"
-                    />
-                  </div>
-                </div>
-
-                {/* 2. 99 Acres */}
-                <div className="grid grid-cols-3 items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#ffea79]" />
-                    <span className="font-bold text-slate-700">99 Acres</span>
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={acresLeads}
-                      onChange={(e) => setAcresLeads(parseInt(e.target.value) || 0)}
-                      placeholder="Leads"
-                      className="w-full p-2 bg-slate-5 w border border-slate-200 rounded-lg text-right font-mono"
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={acresSvc}
-                      onChange={(e) => setAcresSvc(parseInt(e.target.value) || 0)}
-                      placeholder="SVC"
-                      className="w-full p-2 bg-slate-5 w border border-slate-200 rounded-lg text-right font-mono text-emerald-650 font-bold"
-                    />
-                  </div>
-                </div>
-
-                {/* 3. Magicbricks */}
-                <div className="grid grid-cols-3 items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#f7b447]" />
-                    <span className="font-bold text-slate-700">Magicbricks</span>
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={mbLeads}
-                      onChange={(e) => setMbLeads(parseInt(e.target.value) || 0)}
-                      placeholder="Leads"
-                      className="w-full p-2 bg-slate-5 w border border-slate-200 rounded-lg text-right font-mono"
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={mbSvc}
-                      onChange={(e) => setMbSvc(parseInt(e.target.value) || 0)}
-                      placeholder="SVC"
-                      className="w-full p-2 bg-slate-5 w border border-slate-200 rounded-lg text-right font-mono text-emerald-650 font-bold"
-                    />
-                  </div>
-                </div>
-
-                {/* 4. Roof&floor */}
-                <div className="grid grid-cols-3 items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#ff934e]" />
-                    <span className="font-bold text-slate-700 font-sans">Roof&amp;floor</span>
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={rfLeads}
-                      onChange={(e) => setRfLeads(parseInt(e.target.value) || 0)}
-                      placeholder="Leads"
-                      className="w-full p-2 bg-slate-5 w border border-slate-200 rounded-lg text-right font-mono"
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={rfSvc}
-                      onChange={(e) => setRfSvc(parseInt(e.target.value) || 0)}
-                      placeholder="SVC"
-                      className="w-full p-2 bg-slate-5 w border border-slate-200 rounded-lg text-right font-mono text-emerald-650 font-bold"
-                    />
-                  </div>
-                </div>
+                {portals.map((pName) => {
+                  const m = portalMetricsForm[pName] || { leads: 0, allocation: 0, svc: 0, booked: 0 };
+                  return (
+                    <div key={pName} className="p-3 bg-slate-50 hover:bg-slate-100/50 border border-slate-150 rounded-xl space-y-2.5 transition-all">
+                      <div className="flex items-center gap-1.5 border-b border-slate-200/50 pb-1.5">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                        <span className="font-extrabold text-slate-800 text-[11px] tracking-tight">{pName}</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        <div>
+                          <label className="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wider font-bold">Leads</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={m.leads}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value) || 0;
+                              setPortalMetricsForm({
+                                ...portalMetricsForm,
+                                [pName]: { ...m, leads: v }
+                              });
+                            }}
+                            className="w-full p-1.5 bg-white border border-slate-250 rounded text-center font-mono font-bold text-[11px]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wider font-bold">Alloc</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={m.allocation}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value) || 0;
+                              setPortalMetricsForm({
+                                ...portalMetricsForm,
+                                [pName]: { ...m, allocation: v }
+                              });
+                            }}
+                            className="w-full p-1.5 bg-white border border-slate-250 rounded text-center font-mono font-bold text-amber-600 text-[11px]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-slate-505 text-slate-500 mb-0.5 uppercase tracking-wider font-bold">SVC</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={m.svc}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value) || 0;
+                              setPortalMetricsForm({
+                                ...portalMetricsForm,
+                                [pName]: { ...m, svc: v }
+                              });
+                            }}
+                            className="w-full p-1.5 bg-white border border-slate-250 rounded text-center font-mono font-bold text-emerald-650 text-[11px]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-slate-500 mb-0.5 uppercase tracking-wider font-bold">Booked</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={m.booked}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value) || 0;
+                              setPortalMetricsForm({
+                                ...portalMetricsForm,
+                                [pName]: { ...m, booked: v }
+                              });
+                            }}
+                            className="w-full p-1.5 bg-white border border-slate-250 rounded text-center font-mono font-bold text-indigo-650 text-[11px]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Requirement: Traceable last edit details and WHAT REASON */}
@@ -1806,6 +1912,65 @@ export default function PortalReportModule({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Native Confirmation Dialog (No window.confirm blocks) */}
+      {confirmDialog && confirmDialog.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-51 animate-fade-in" style={{ zIndex: 9999 }} id="portal-custom-confirm-modal">
+          <div className="bg-white border border-slate-150 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl shrink-0">
+                <AlertTriangle size={20} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-slate-900">{confirmDialog.title}</h4>
+                <p className="text-xs text-slate-500 font-sans leading-relaxed">{confirmDialog.message}</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 hover:bg-slate-50 text-slate-500 font-bold border border-slate-200 rounded-lg text-xs cursor-pointer"
+              >
+                Cancel Action
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow-xs cursor-pointer"
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic System Notice Alert Dialog (No window.alert blocks) */}
+      {feedbackAlert && feedbackAlert.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-51 animate-fade-in" style={{ zIndex: 9999 }} id="portal-custom-alert-modal">
+          <div className="bg-white border border-slate-150 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
+                <AlertTriangle size={18} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-slate-900">{feedbackAlert.title}</h4>
+                <p className="text-xs text-slate-500 font-sans leading-relaxed">{feedbackAlert.message}</p>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setFeedbackAlert(null)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs shadow-xs cursor-pointer"
+              >
+                Acknowledge
+              </button>
+            </div>
           </div>
         </div>
       )}
