@@ -462,6 +462,11 @@ export default function App() {
     await loadAllDatabaseStates();
   };
 
+  const handleClearAllPortalReports = async () => {
+    await dataService.clearAllPortalReports();
+    await loadAllDatabaseStates();
+  };
+
   // Action: Target Budget CRUD
   const handleSaveTargetBudget = async (row: TargetBudgetRow) => {
     await dataService.saveTargetBudget(row);
@@ -979,6 +984,8 @@ export default function App() {
                     portalReports={portalReports}
                     onSaveReport={handleSavePortalReport}
                     onDeleteReport={handleDeletePortalReport}
+                    onClearAllReports={handleClearAllPortalReports}
+                    rolePermission={currentRolePermission}
                   />
                 </div>
               )}

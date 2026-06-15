@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { PortalReportRow } from "../types";
+import { PortalReportRow, UserRolePermission } from "../types";
 import { auth } from "../firebase";
 import * as XLSX from "xlsx";
 import {
@@ -41,12 +41,31 @@ interface PortalReportModuleProps {
   portalReports: PortalReportRow[];
   onSaveReport: (row: PortalReportRow) => Promise<void>;
   onDeleteReport: (id: string) => Promise<void>;
+  onClearAllReports?: () => Promise<void>;
+  rolePermission?: UserRolePermission;
 }
 
 export default function PortalReportModule({
   portalReports,
   onSaveReport,
   onDeleteReport,
+  onClearAllReports,
+  rolePermission = {
+    role: "Admin",
+    label: "Super Admin",
+    description: "",
+    canCreateCampaigns: true,
+    canEditCampaigns: true,
+    canDeleteCampaigns: true,
+    canCreateCreatives: true,
+    canDeleteCreatives: true,
+    canAnalyzeCreatives: true,
+    canManageLeads: true,
+    canDeleteLeads: true,
+    canManageTargets: true,
+    canDeleteTargets: true,
+    canManageRules: true
+  },
 }: PortalReportModuleProps) {
   // Modal controllers
   const [showAddModal, setShowAddModal] = useState(false);
@@ -188,6 +207,34 @@ export default function PortalReportModule({
           setFilterPortal("all");
         }
         setConfirmDialog(null);
+      }
+    });
+  };
+
+  const handleClearDatabaseWithConfirmation = () => {
+    if (!onClearAllReports) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: "EXTREME CRITICAL: Purge Database?",
+      message: "WARNING: This administrative purge operation will immediately and permanently erase ALL logged Daily Portal Lead & SVC statistics rows from the persistent database. There is absolutely no system recovery or undo capabilities. Proceed?",
+      onConfirm: async () => {
+        try {
+          await onClearAllReports();
+          setConfirmDialog(null);
+          setFeedbackAlert({
+            isOpen: true,
+            title: "Database Purge Complete",
+            message: "All Daily Portal Report ledger entries have successfully been eliminated. Your database is now pristine."
+          });
+        } catch (e) {
+          console.error(e);
+          setConfirmDialog(null);
+          setFeedbackAlert({
+            isOpen: true,
+            title: "Purge Encountered An Error",
+            message: "An internal database error halted the deletion routines. Please try again."
+          });
+        }
       }
     });
   };
@@ -1135,6 +1182,29 @@ export default function PortalReportModule({
               </div>
             </div>
           </div>
+
+          {/* Admin Database Control panel */}
+          {rolePermission?.role === "Admin" && (
+            <div className="pt-5 border-t border-rose-100 space-y-3" id="admin-database-tools-zone">
+              <div className="flex items-center gap-1.5 text-rose-600 font-bold text-xs uppercase tracking-wider">
+                <ShieldAlert size={15} className="animate-bounce" />
+                <span>Super Admin Database Control Panel</span>
+              </div>
+              <p className="text-[11px] text-slate-550 font-sans">
+                Highly sensitive action zone. You possess administrative clearance to purge all configured daily portal metrics and listings logs. This resets active portal reporting dashboards completely.
+              </p>
+              <div>
+                <button
+                  type="button"
+                  onClick={handleClearDatabaseWithConfirmation}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-rose-100 text-rose-750 font-bold rounded-lg border border-red-200 hover:border-red-300 transition-all text-xs cursor-pointer"
+                >
+                  <Trash2 size={13} />
+                  <span>Purge All Portal Report Records</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

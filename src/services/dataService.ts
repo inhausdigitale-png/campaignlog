@@ -495,30 +495,8 @@ const RAW_PORTAL_LEAL_DATA = [
 ];
 
 const INITIAL_PORTAL_REPORTS: PortalReportRow[] = [];
-RAW_PORTAL_LEAL_DATA.forEach((raw, index) => {
-  const portalsMap = [
-    { name: "Housing", metrics: raw.h },
-    { name: "99 Acres", metrics: raw.a },
-    { name: "Magicbricks", metrics: raw.m },
-    { name: "Roof&floor", metrics: raw.r }
-  ];
-  
-  portalsMap.forEach((p, pIdx) => {
-    INITIAL_PORTAL_REPORTS.push({
-      id: `p-rep-seed-${index}-${pIdx}`,
-      date: raw.d,
-      portal: p.name,
-      project: "Skyline Residency", // default to main active project
-      generated: p.metrics[0],
-      svs: p.metrics[1],
-      svc: p.metrics[1],
-      walkin: 0,
-      gross: 0,
-      net: 0,
-      createdAt: new Date(`${raw.d}T09:00:00Z`).toISOString()
-    });
-  });
-});
+// RAW_PORTAL_LEAL_DATA seeding is completed empty to clear already existing data on clean load
+
 
 const INITIAL_TARGET_BUDGETS: TargetBudgetRow[] = [
   {
@@ -1231,7 +1209,7 @@ export const dataService = {
 
   // --- Portal Reports ---
   async getPortalReports(): Promise<PortalReportRow[]> {
-    const SEED_VERSION_KEY = "portal_reports_seeded_v3";
+    const SEED_VERSION_KEY = "portal_reports_seeded_v15_clean";
     if (typeof localStorage !== "undefined") {
       if (!localStorage.getItem(SEED_VERSION_KEY)) {
         localStorage.setItem(KEYS.PORTAL_REPORTS, JSON.stringify(INITIAL_PORTAL_REPORTS));
@@ -1260,6 +1238,25 @@ export const dataService = {
       }
     }
     return loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS);
+  },
+
+  async clearAllPortalReports(): Promise<boolean> {
+    // 1. Local Cache
+    saveLocal(KEYS.PORTAL_REPORTS, []);
+
+    // 2. Cloud Sync
+    if (isFirebaseEnabled) {
+      try {
+        const q = query(getCollectionRef("portal_reports"));
+        const snapshot = await getDocs(q);
+        for (const docSnap of snapshot.docs) {
+          await deleteDoc(getDocRef("portal_reports", docSnap.id));
+        }
+      } catch (err) {
+        console.error("[FIREBASE] clearAllPortalReports Firestore sync failed:", err);
+      }
+    }
+    return true;
   },
 
   async savePortalReport(row: PortalReportRow): Promise<PortalReportRow> {
