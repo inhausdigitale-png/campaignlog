@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Campaign, CampaignPerformance, AIRecommendationReport } from "../types";
+import { Campaign, CampaignPerformance, AIRecommendationReport, ChangeLogEntry } from "../types";
 import { formatINR, formatIndianShort, formatIndianNumber } from "../utils/indiaHelpers";
 import {
   ResponsiveContainer,
@@ -31,18 +31,26 @@ import {
   LayoutDashboard,
   Calendar,
   Filter,
+  History,
+  User,
+  Clock,
+  FileText,
+  CheckCircle2,
+  Lock,
 } from "lucide-react";
 
 interface DashboardProps {
   campaigns: Campaign[];
   campaignPerformances?: CampaignPerformance[];
   onSavePerformance?: (p: CampaignPerformance) => Promise<void>;
+  changeLogEntries?: ChangeLogEntry[];
 }
 
 export default function Dashboard({ 
   campaigns, 
   campaignPerformances = [], 
-  onSavePerformance 
+  onSavePerformance,
+  changeLogEntries = []
 }: DashboardProps) {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("All");
   const [selectedProject, setSelectedProject] = useState<string>("All");
@@ -50,6 +58,18 @@ export default function Dashboard({
   const [endDateFilter, setEndDateFilter] = useState<string>("");
 
   const [aiReport, setAiReport] = useState<AIRecommendationReport | null>(null);
+
+  // Activity Feed States
+  const [activitySearch, setActivitySearch] = useState<string>("");
+  const [activityCategoryFilter, setActivityCategoryFilter] = useState<string>("All");
+  const [expandedActivityIds, setExpandedActivityIds] = useState<Record<string, boolean>>({});
+
+  const toggleActivityDetails = (id: string) => {
+    setExpandedActivityIds((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
@@ -483,6 +503,255 @@ export default function Dashboard({
               </div>
             </div>
           </div>
+
+          {/* Live Operations & Modification Feed (Audit Trail) */}
+          {(() => {
+            // Sort activities by date/timestamp descending
+            const sortedActivities = [...changeLogEntries].sort((a, b) => {
+              const dateA = a.createdAt ? new Date(a.createdAt).getTime() : (a.date ? new Date(a.date).getTime() : 0);
+              const dateB = b.createdAt ? new Date(b.createdAt).getTime() : (b.date ? new Date(b.date).getTime() : 0);
+              return dateB - dateA;
+            });
+
+            const getCategory = (entry: ChangeLogEntry) => {
+              if (entry.changeCategory) return entry.changeCategory;
+              const typeLower = (entry.type || "").toLowerCase();
+              if (typeLower.includes("budget")) return "Budget";
+              if (typeLower.includes("creative") || typeLower.includes("copy") || typeLower.includes("headline")) return "Creative";
+              if (typeLower.includes("audience") || typeLower.includes("target") || typeLower.includes("location") || typeLower.includes("interest")) return "Audience";
+              return "Other";
+            };
+
+            const filteredActivities = sortedActivities.filter((entry) => {
+              const category = getCategory(entry);
+              const matchesCategory = activityCategoryFilter === "All" || category === activityCategoryFilter;
+              
+              const searchLower = activitySearch.toLowerCase();
+              const matchesSearch = 
+                (entry.project || "").toLowerCase().includes(searchLower) ||
+                (entry.campaignName || "").toLowerCase().includes(searchLower) ||
+                (entry.type || "").toLowerCase().includes(searchLower) ||
+                (entry.changed || "").toLowerCase().includes(searchLower) ||
+                (entry.reason || "").toLowerCase().includes(searchLower) ||
+                (entry.lastEditedBy || "").toLowerCase().includes(searchLower);
+
+              return matchesCategory && matchesSearch;
+            });
+
+            const totalModifications = sortedActivities.length;
+            const implementedCount = sortedActivities.filter(a => a.progress === "Implemented").length;
+            const inProgressCount = sortedActivities.filter(a => a.progress === "In Progress" || a.progress === "In-Progress").length;
+            const plannedCount = sortedActivities.filter(a => a.progress === "Planned").length;
+
+            return (
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 space-y-6">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-slate-100">
+                  <div>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold bg-emerald-50 border border-emerald-150 text-emerald-700 rounded-full uppercase tracking-wider mb-2 font-mono">
+                      <Clock size={11} className="text-emerald-500 animate-pulse" />
+                      Live Feed Stream
+                    </span>
+                    <h3 className="text-base font-bold text-slate-900">Administrator Activity & Change Log</h3>
+                    <p className="text-xs text-slate-500 max-w-2xl mt-1">
+                      High-level audit feed displaying recent system modifications, target budget relocations, active target changes, and ad asset tunings.
+                    </p>
+                  </div>
+
+                  {/* Micro statistics badges */}
+                  <div className="flex flex-wrap items-center gap-3 text-[11px] font-medium">
+                    <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
+                      Total Actions: <strong className="font-mono">{totalModifications}</strong>
+                    </span>
+                    <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-250">
+                      Implemented: <strong className="font-mono">{implementedCount}</strong>
+                    </span>
+                    <span className="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-md border border-amber-250">
+                      In Progress: <strong className="font-mono">{inProgressCount}</strong>
+                    </span>
+                    <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-250">
+                      Planned: <strong className="font-mono">{plannedCount}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Filter and Search Bar */}
+                <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                  <div className="relative flex-1 max-w-md">
+                    <input
+                      type="text"
+                      placeholder="Search logged modifications or operations rationale..."
+                      value={activitySearch}
+                      onChange={(e) => setActivitySearch(e.target.value)}
+                      className="w-full text-xs h-9 pl-9 pr-4 bg-slate-50 border border-slate-200 hover:border-slate-300 focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-lg text-slate-700 transition-all outline-hidden"
+                    />
+                    <div className="absolute left-3 top-2.5 text-slate-400">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Category Pills */}
+                  <div className="flex flex-wrap gap-1.5 self-start md:self-auto select-none">
+                    {["All", "Budget", "Creative", "Audience", "Other"].map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setActivityCategoryFilter(cat)}
+                        type="button"
+                        className={`text-xs px-3 py-1.5 rounded-lg font-bold border transition-all cursor-pointer ${
+                          activityCategoryFilter === cat
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                            : "bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-800 hover:bg-slate-100"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Feed Log Stream */}
+                <div className="space-y-3 max-h-120 overflow-y-auto pr-1">
+                  {filteredActivities.length === 0 ? (
+                    <div className="text-center py-10 bg-slate-50/50 border border-dashed border-slate-200 rounded-xl">
+                      <History size={28} className="mx-auto text-slate-300 mb-2" />
+                      <p className="text-xs font-semibold text-slate-600">No matching operations found</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Try relaxing your search terms or selecting another category.</p>
+                    </div>
+                  ) : (
+                    filteredActivities.map((entry) => {
+                      const category = getCategory(entry);
+                      const isExpanded = !!expandedActivityIds[entry.id];
+
+                      // Icon assignment based on category
+                      let categoryIcon = <History size={15} className="text-indigo-600" />;
+                      let iconBg = "bg-indigo-50 border-indigo-100";
+                      
+                      if (category === "Budget") {
+                        categoryIcon = <DollarSign size={15} className="text-emerald-600" />;
+                        iconBg = "bg-emerald-50 border-emerald-100";
+                      } else if (category === "Creative") {
+                        categoryIcon = <FileText size={15} className="text-blue-600" />;
+                        iconBg = "bg-blue-50 border-blue-100";
+                      } else if (category === "Audience") {
+                        categoryIcon = <User size={15} className="text-amber-600" />;
+                        iconBg = "bg-amber-50 border-amber-100";
+                      }
+
+                      // Progress styles
+                      let progressStyle = "bg-slate-50 text-slate-600 border-slate-200";
+                      if (entry.progress === "Implemented") {
+                        progressStyle = "bg-emerald-50 text-emerald-800 border-emerald-200/60";
+                      } else if (entry.progress === "In Progress" || entry.progress === "In-Progress") {
+                        progressStyle = "bg-amber-50 text-amber-800 border-amber-200/60";
+                      } else if (entry.progress === "Planned") {
+                        progressStyle = "bg-sky-50 text-sky-800 border-sky-200/60";
+                      } else if (entry.progress === "Rolled Back") {
+                        progressStyle = "bg-rose-50 text-rose-850 text-rose-700 border-rose-200/60";
+                      }
+
+                      return (
+                        <div
+                          key={entry.id}
+                          className="group border border-slate-200 bg-white hover:border-slate-300/90 rounded-xl transition-all shadow-xs"
+                        >
+                          <div
+                            onClick={() => toggleActivityDetails(entry.id)}
+                            className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer select-none"
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className={`p-2 rounded-lg border ${iconBg} shrink-0`}>
+                                {categoryIcon}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                  <span className="text-xs font-bold text-slate-900 truncate">
+                                    {entry.campaignName}
+                                  </span>
+                                  {entry.project && (
+                                    <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                                      {entry.project}
+                                    </span>
+                                  )}
+                                  <span className={`text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${progressStyle} font-sans`}>
+                                    {entry.progress || "General Log"}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-600 line-clamp-1">
+                                  {entry.changed || "Campaign configurations edited"}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 self-end sm:self-auto shrink-0 text-right">
+                              <div className="text-right">
+                                <span className="block text-[10.5px] font-semibold text-slate-700">
+                                  {entry.type || "Modification"}
+                                </span>
+                                <span className="block text-[9.5px] text-slate-400 font-mono mt-0.5">
+                                  {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString("en-IN", {
+                                    day: "2-digit",
+                                    month: "short",
+                                    year: "numeric"
+                                  }) : entry.date}
+                                </span>
+                              </div>
+                              <div className="text-slate-400 group-hover:text-slate-700 transition-colors">
+                                <svg
+                                  className={`w-4 h-4 transform transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Detail expansion area */}
+                          {isExpanded && (
+                            <div className="border-t border-slate-100 bg-slate-50/60 p-4 rounded-b-xl text-xs space-y-3 animate-fade-in">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">Operations Rationale</span>
+                                  <p className="text-slate-700 bg-white p-3 rounded-lg border border-slate-200/80 leading-relaxed">
+                                    {entry.reason || "No explicit modification explanation was declared."}
+                                  </p>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">System Parameters</span>
+                                  <div className="bg-white p-3 rounded-lg border border-slate-200/80 space-y-1.5 font-mono text-[11px] text-slate-600">
+                                    <div className="flex justify-between border-b border-slate-100 pb-1">
+                                      <span>Ad Set Context:</span>
+                                      <span className="font-semibold text-slate-800">{entry.adSetName || "All Ad Sets"}</span>
+                                    </div>
+                                    <div className="flex justify-between border-b border-slate-100 pb-1">
+                                      <span>Network Status:</span>
+                                      <span className="font-semibold text-slate-800">{entry.campaignStatus || "Active"}</span>
+                                    </div>
+                                    <div className="flex justify-between border-b border-slate-100 pb-1">
+                                      <span>Log Operator ID:</span>
+                                      <span className="font-semibold text-slate-800">{entry.lastEditedBy || "authorized_operator@example.in"}</span>
+                                    </div>
+                                    <div className="flex justify-between pb-0">
+                                      <span>Logged Timestamp:</span>
+                                      <span className="font-semibold text-slate-800 truncate select-all">{entry.createdAt || entry.date}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* AI recommendations drawer (Gemini Powered) */}
           <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">

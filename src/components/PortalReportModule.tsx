@@ -17,7 +17,8 @@ import {
   User,
   History,
   X,
-  Edit2
+  Edit2,
+  FileSpreadsheet
 } from "lucide-react";
 
 interface PortalReportModuleProps {
@@ -78,6 +79,81 @@ export default function PortalReportModule({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Export current pivoted view matrix to CSV
+  const exportToCSV = () => {
+    // Collect active columns
+    const headers: string[] = ["Date", "Project"];
+    if (filterPortal === "all" || filterPortal === "Housing") {
+      headers.push("Housing Leads", "Housing SVC");
+    }
+    if (filterPortal === "all" || filterPortal === "99 Acres") {
+      headers.push("99 Acres Leads", "99 Acres SVC");
+    }
+    if (filterPortal === "all" || filterPortal === "Magicbricks") {
+      headers.push("Magicbricks Leads", "Magicbricks SVC");
+    }
+    if (filterPortal === "all" || filterPortal === "Roof&floor") {
+      headers.push("Roof & floor Leads", "Roof & floor SVC");
+    }
+    headers.push("Total Leads", "Total SVC");
+
+    const csvRows = [headers.map(h => `"${h.replace(/"/g, '""')}"`).join(",")];
+
+    sortedPivotedRows.forEach((row) => {
+      const rowData: string[] = [
+        row.date,
+        `"${row.project.replace(/"/g, '""')}"`
+      ];
+
+      let rowLeadsTotal = 0;
+      let rowSvcTotal = 0;
+
+      if (filterPortal === "all" || filterPortal === "Housing") {
+        const l = row.Housing?.leads || 0;
+        const s = row.Housing?.svc || 0;
+        rowData.push(String(l), String(s));
+        rowLeadsTotal += l;
+        rowSvcTotal += s;
+      }
+      if (filterPortal === "all" || filterPortal === "99 Acres") {
+        const l = row["99 Acres"]?.leads || 0;
+        const s = row["99 Acres"]?.svc || 0;
+        rowData.push(String(l), String(s));
+        rowLeadsTotal += l;
+        rowSvcTotal += s;
+      }
+      if (filterPortal === "all" || filterPortal === "Magicbricks") {
+        const l = row.Magicbricks?.leads || 0;
+        const s = row.Magicbricks?.svc || 0;
+        rowData.push(String(l), String(s));
+        rowLeadsTotal += l;
+        rowSvcTotal += s;
+      }
+      if (filterPortal === "all" || filterPortal === "Roof&floor") {
+        const l = row["Roof&floor"]?.leads || 0;
+        const s = row["Roof&floor"]?.svc || 0;
+        rowData.push(String(l), String(s));
+        rowLeadsTotal += l;
+        rowSvcTotal += s;
+      }
+
+      rowData.push(String(rowLeadsTotal), String(rowSvcTotal));
+      csvRows.push(rowData.join(","));
+    });
+
+    // Create a Blob to safely support large data sizes
+    const csvString = csvRows.join("\n");
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `portal_site_visits_summary_${filterMonth}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Extract list of existing projects for dropdown filters
@@ -362,14 +438,25 @@ export default function PortalReportModule({
           </select>
         </div>
 
-        {/* Template Downloader */}
-        <div className="sm:ml-auto self-end pb-1">
+        {/* Template Downloader & Export Current View */}
+        <div className="sm:ml-auto self-end pb-1 flex flex-wrap gap-4 items-center">
           <button
             onClick={downloadPortalTemplate}
             className="text-xs font-bold text-slate-700 underline hover:text-indigo-650 flex items-center gap-1.5 transition-all cursor-pointer"
+            type="button"
           >
             <Download size={13} />
             <span>Download Portal Template</span>
+          </button>
+
+          <button
+            id="export-csv-btn"
+            onClick={exportToCSV}
+            className="flex items-center gap-2 bg-emerald-650 hover:bg-emerald-700 hover:scale-[1.01] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-250 font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
+            type="button"
+          >
+            <FileSpreadsheet size={14} />
+            <span>Export Matrix to CSV</span>
           </button>
         </div>
       </div>

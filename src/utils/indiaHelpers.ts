@@ -100,7 +100,7 @@ export const ROLE_PERMISSIONS: Record<string, UserRolePermission> = {
   Auditor: {
     role: "Auditor",
     label: "External Auditor / Corporate Guest",
-    description: "Strict view-only read telemetry context. Forbidden from creating, editing, resetting, or deleting any live sandbox records.",
+    description: "Strict view-only read telemetry context. Forbidden from creating, editing, resetting, or deleting any active database records.",
     canCreateCampaigns: false,
     canEditCampaigns: false,
     canDeleteCampaigns: false,

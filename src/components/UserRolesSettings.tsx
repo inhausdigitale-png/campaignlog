@@ -8,8 +8,6 @@ interface UserRolesSettingsProps {
   onSaveRolePermissions: (permissions: Record<string, UserRolePermission>) => void;
   userRole: SimulatedRoleType;
   onSetUserRole: (role: SimulatedRoleType) => void;
-  bypassSecurity: boolean;
-  onToggleBypassSecurity: () => void;
   invites: Invite[];
   onAddInvite: (email: string, role: string, password?: string) => void;
   onDeleteInvite: (id: string) => void;
@@ -21,8 +19,6 @@ export default function UserRolesSettings({
   onSaveRolePermissions,
   userRole,
   onSetUserRole,
-  bypassSecurity,
-  onToggleBypassSecurity,
   invites,
   onAddInvite,
   onDeleteInvite,
@@ -223,34 +219,26 @@ export default function UserRolesSettings({
         </div>
       </div>
 
-      {/* Production & Debug Settings Section */}
+      {/* Production Mode Enforcement Settings */}
       <div className="my-5 p-4 bg-slate-50 rounded-xl border border-slate-200/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-1.5">
-            <h3 className="text-xs font-bold text-slate-800">Production Mode Enforcement Settings</h3>
-            <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wider">Live</span>
+            <h3 className="text-xs font-bold text-slate-800">Production Mode Security Settings</h3>
+            <span className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wider">Active</span>
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            When developer bypass is disabled, all restrictions governed by the selected role are fully active and enforced client-side.
+            Production mode is fully active. All user permissions and granular security constraints are strictly enforced.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            id="role_btn_toggle_bypass"
-            onClick={onToggleBypassSecurity}
-            className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none ${
-              bypassSecurity
-                ? "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
-                : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-            }`}
-          >
-            <ShieldAlert size={15} className={bypassSecurity ? "text-amber-500 animate-pulse" : "text-emerald-500"} />
+          <div className="flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold border bg-emerald-50 text-emerald-700 border-emerald-200">
+            <Lock size={15} className="text-emerald-500 animate-pulse" />
             <div>
-              <span className="block text-left text-[9.5px] uppercase tracking-wider font-semibold opacity-75">Bypass Developer Overrides</span>
-              <span>{bypassSecurity ? "Bypass is active (Sandbox mode relaxed)" : "Enforced (Granular Policies Active)"}</span>
+              <span className="block text-left text-[9.5px] uppercase tracking-wider font-semibold opacity-75">Production Policy</span>
+              <span>Enforced & Secured</span>
             </div>
-          </button>
+          </div>
         </div>
       </div>
 

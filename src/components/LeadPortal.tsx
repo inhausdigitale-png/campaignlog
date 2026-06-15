@@ -181,6 +181,53 @@ export default function LeadPortal({
     return matchesSearch && matchesStatus && matchesCampaign && matchesViewMode;
   });
 
+  // Export current filtered leads list view to CSV
+  const exportToCSV = () => {
+    const headers = [
+      "ID",
+      "Lead Name",
+      "Email Address",
+      "Phone Number",
+      "Campaign ID",
+      "Campaign Name",
+      "Status",
+      "Platform/Source",
+      "Notes/Remarks",
+      "Created At",
+      "Lead Origin"
+    ];
+
+    const csvRows = [headers.map(h => `"${h.replace(/"/g, '""')}"`).join(",")];
+
+    filteredLeads.forEach((l) => {
+      const rowData = [
+        l.id,
+        `"${l.leadName.replace(/"/g, '""')}"`,
+        `"${l.email.replace(/"/g, '""')}"`,
+        `"${l.phone.replace(/"/g, '""')}"`,
+        `"${(l.campaignId || "").replace(/"/g, '""')}"`,
+        `"${(l.campaignName || "").replace(/"/g, '""')}"`,
+        `"${l.status}"`,
+        `"${(l.platform || "").replace(/"/g, '""')}"`,
+        `"${(l.notes || "").replace(/"/g, '""')}"`,
+        l.createdAt,
+        l.isPortalLead ? "Portal Upload" : "Campaign Generated"
+      ];
+      csvRows.push(rowData.join(","));
+    });
+
+    const csvString = csvRows.join("\n");
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `portal_leads_database_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Upper header */}
@@ -198,8 +245,18 @@ export default function LeadPortal({
         </div>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
           <button
+            id="export-csv-btn"
+            onClick={exportToCSV}
+            className="flex items-center gap-1.5 bg-emerald-650 hover:bg-emerald-700 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-250 font-bold text-xs px-4 py-2.5 rounded-lg shadow-xs transition-all cursor-pointer grow md:grow-0 justify-center"
+            type="button"
+          >
+            <FileSpreadsheet size={14} />
+            <span>Export Database to CSV</span>
+          </button>
+          <button
             onClick={() => setShowUploadSection(!showUploadSection)}
             className="flex items-center gap-1.5 border border-indigo-250 bg-indigo-50/20 hover:bg-indigo-50 font-bold text-xs text-indigo-700 px-4 py-2.5 rounded-lg shadow-xs transition-all cursor-pointer grow md:grow-0 justify-center"
+            type="button"
           >
             <Upload size={14} />
             Bulk Upload Portal Leads
@@ -207,6 +264,7 @@ export default function LeadPortal({
           <button
             onClick={() => setShowModal(true)}
             className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 font-bold text-xs text-white px-4 py-2.5 rounded-lg shadow-sm transition-all cursor-pointer grow md:grow-0 justify-center"
+            type="button"
           >
             <Plus size={16} />
             Register Manual Lead

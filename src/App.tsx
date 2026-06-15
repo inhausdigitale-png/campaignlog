@@ -64,12 +64,6 @@ export default function App() {
     return (saved as SimulatedRoleType) || "Admin";
   });
 
-  const [bypassSecurity, setBypassSecurity] = useState<boolean>(() => {
-    const saved = localStorage.getItem("simulated_bypass_security");
-    // Default system bypass security checks to false to prevent active sandbox bypass indicators by default
-    return saved === "true";
-  });
-
   useEffect(() => {
     localStorage.setItem("simulated_user_role", userRole);
   }, [userRole]);
@@ -79,33 +73,7 @@ export default function App() {
     localStorage.setItem("custom_role_permissions", JSON.stringify(newPermissions));
   };
 
-  const handleToggleBypassSecurity = () => {
-    setBypassSecurity(prev => {
-      const next = !prev;
-      localStorage.setItem("simulated_bypass_security", String(next));
-      return next;
-    });
-  };
-
-  const rawRolePermission = rolePermissions[userRole] || rolePermissions.Admin || ROLE_PERMISSIONS.Admin;
-  const currentRolePermission = bypassSecurity
-    ? {
-        role: rawRolePermission.role,
-        label: `${rawRolePermission.label} (Testing Mode - Unrestricted)`,
-        description: "Testing mode is active: all client-side restriction features are fully unlocked.",
-        canCreateCampaigns: true,
-        canEditCampaigns: true,
-        canDeleteCampaigns: true,
-        canCreateCreatives: true,
-        canDeleteCreatives: true,
-        canAnalyzeCreatives: true,
-        canManageLeads: true,
-        canDeleteLeads: true,
-        canManageTargets: true,
-        canDeleteTargets: true,
-        canManageRules: true
-      }
-    : rawRolePermission;
+  const currentRolePermission = rolePermissions[userRole] || rolePermissions.Admin || ROLE_PERMISSIONS.Admin;
 
   // Databases States
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -690,20 +658,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Security Bypass Button for Testing */}
-            <button
-              onClick={handleToggleBypassSecurity}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none font-sans ${
-                bypassSecurity
-                  ? "bg-amber-50 text-amber-700 border-amber-200 hover:bg-[#FEF3C7]"
-                  : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
-              }`}
-              title={bypassSecurity ? "Client security is completely relaxed. Click to enable restrictions." : "Security checks active. Click to bypass restrictions for debugging."}
-            >
-              <ShieldAlert size={14} className={bypassSecurity ? "text-amber-500 animate-pulse" : "text-slate-400"} />
-              <span>{bypassSecurity ? "Bypass: Active" : "Bypass: Inactive"}</span>
-            </button>
-
             {isFirebaseEnabled && user ? (
               <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-emerald-750 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
                 <CloudCheck size={12} className="text-emerald-500 animate-pulse" />
@@ -712,7 +666,7 @@ export default function App() {
             ) : (
               <div className="hidden sm:flex items-center gap-1 text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
                 <Database size={11} className="text-amber-500" />
-                <span>Sandbox Mode (Offline Local)</span>
+                <span>Local Database Mode</span>
               </div>
             )}
 
@@ -900,7 +854,7 @@ export default function App() {
           <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs text-left">
             <div className="flex items-center gap-1.5 font-bold text-slate-800 font-sans mb-2">
               <Shield size={14} className="text-indigo-650 text-indigo-600" />
-              <span className="text-xs uppercase tracking-wider">Active Sandbox Policy</span>
+              <span className="text-xs uppercase tracking-wider">Active Security Policy</span>
             </div>
             <h4 className="font-bold text-slate-900 font-sans text-xs">{currentRolePermission.label}</h4>
             <p className="text-slate-500 mt-1 text-[10.5px] leading-relaxed">
@@ -939,13 +893,13 @@ export default function App() {
             <div className="bg-amber-50 border border-amber-200/60 p-4.5 rounded-2xl text-[11px] text-amber-800 space-y-2 leading-relaxed shadow-xs">
               <div className="flex items-center gap-1 font-bold text-amber-900 font-display">
                 <Database size={13} className="text-amber-600" />
-                <span>Local Sandbox persistence Active</span>
+                <span>Local Database Active</span>
               </div>
               <p>
-                All campaigns, change logs, and visual creatives persist durably inside your browser's local sandbox storage context.
+                All campaigns, change logs, and visual creatives persist durably inside your browser's secure local storage context.
               </p>
               <div className="text-[10px] text-amber-700/90 font-medium">
-                Once Firebase terms are accepted in the credentials panel, database sync switches automatically to active cloud instances.
+                Once Cloud database connectivity is configured, database synchronization switches automatically to active cloud structures.
               </div>
             </div>
           )}
@@ -969,6 +923,7 @@ export default function App() {
                   campaigns={campaigns} 
                   campaignPerformances={campaignPerformances}
                   onSavePerformance={handleSaveCampaignPerformance}
+                  changeLogEntries={changeLogEntries}
                 />
               )}
               {activeTab === "campaigns" && (
@@ -1100,8 +1055,6 @@ export default function App() {
                   onSaveRolePermissions={handleSaveRolePermissions}
                   userRole={userRole}
                   onSetUserRole={setUserRole}
-                  bypassSecurity={bypassSecurity}
-                  onToggleBypassSecurity={handleToggleBypassSecurity}
                   invites={invites}
                   onAddInvite={handleAddInvite}
                   onDeleteInvite={handleDeleteInvite}
