@@ -16,6 +16,10 @@ export interface Campaign {
   ownerId?: string;
   leads?: number;
   svcBooking?: number;
+  adset?: string;
+  creativeType?: "static" | "video";
+  campaignManager?: string;
+  cpl?: number;
 }
 
 export interface AuditLog {

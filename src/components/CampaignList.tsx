@@ -157,6 +157,10 @@ export default function CampaignList({
   const [formEndDate, setFormEndDate] = useState("");
   const [formObjectives, setFormObjectives] = useState("");
   const [formEditReason, setFormEditReason] = useState("");
+  const [formAdset, setFormAdset] = useState("");
+  const [formCreativeType, setFormCreativeType] = useState<"static" | "video">("static");
+  const [formCampaignManager, setFormCampaignManager] = useState("");
+  const [formCpl, setFormCpl] = useState<number | "">("");
 
   const platformOptions: Campaign["platform"][] = [
     "Google Ads",
@@ -184,6 +188,10 @@ export default function CampaignList({
     );
     setFormObjectives("");
     setFormEditReason("");
+    setFormAdset("");
+    setFormCreativeType("static");
+    setFormCampaignManager("");
+    setFormCpl("");
     setShowModal(true);
   };
 
@@ -203,6 +211,10 @@ export default function CampaignList({
     setFormEndDate(c.endDate || "");
     setFormObjectives(c.objectives || "");
     setFormEditReason("");
+    setFormAdset(c.adset || "");
+    setFormCreativeType(c.creativeType || "static");
+    setFormCampaignManager(c.campaignManager || "");
+    setFormCpl(c.cpl !== undefined ? c.cpl : "");
     setShowModal(true);
   };
 
@@ -227,6 +239,10 @@ export default function CampaignList({
       objectives: formObjectives,
       createdAt: editingCampaign ? editingCampaign.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      adset: formAdset.trim() || undefined,
+      creativeType: formCreativeType,
+      campaignManager: formCampaignManager.trim() || undefined,
+      cpl: formCpl !== "" ? Number(formCpl) : undefined,
     };
 
     await onSaveCampaign(baseCampaign);
@@ -263,6 +279,18 @@ export default function CampaignList({
       if ((editingCampaign.objectives || "") !== formObjectives) {
         changes.push("Objectives/Targeting modified");
       }
+      if ((editingCampaign.adset || "") !== formAdset) {
+        changes.push(`Adset: "${editingCampaign.adset || "None"}" ➔ "${formAdset || "None"}"`);
+      }
+      if ((editingCampaign.creativeType || "static") !== formCreativeType) {
+        changes.push(`Format: "${editingCampaign.creativeType || "static"}" ➔ "${formCreativeType}"`);
+      }
+      if ((editingCampaign.campaignManager || "") !== formCampaignManager) {
+        changes.push(`Manager: "${editingCampaign.campaignManager || "None"}" ➔ "${formCampaignManager || "None"}"`);
+      }
+      if ((editingCampaign.cpl ?? "") !== formCpl) {
+        changes.push(`Manual CPL: "${editingCampaign.cpl ?? "None"}" ➔ "${formCpl ?? "None"}"`);
+      }
 
       const activeChanges = changes.length > 0 ? changes.join(", ") : "Saved attributes without changes";
       const reasonText = formEditReason.trim() || "Routine parameter optimizations and budget fine-tuning.";
@@ -273,7 +301,7 @@ export default function CampaignList({
         project: formPlatform,
         campaignId: editingCampaign.id,
         campaignName: formName,
-        adSetName: "Primary",
+        adSetName: formAdset || "Primary",
         campaignStatus: formStatus,
         type: "Parameter Adjustment",
         changed: activeChanges,
@@ -929,6 +957,34 @@ export default function CampaignList({
                         <span className="inline-block text-[9px] font-mono text-indigo-700 font-semibold bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-120">
                           {c.platform}
                         </span>
+
+                        {/* Operational tags row */}
+                        {(c.adset || c.creativeType || c.campaignManager) && (
+                          <div className="flex flex-wrap items-center gap-1 mt-1 pl-0.5">
+                            {c.adset && (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-sans text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200" title={`Adset: ${c.adset}`}>
+                                <span className="font-extrabold text-[8px] uppercase text-slate-400 font-display">Set:</span>
+                                <span className="font-bold truncate max-w-[130px]">{c.adset}</span>
+                              </span>
+                            )}
+                            {c.creativeType && (
+                              <span className={`inline-flex items-center gap-1 text-[9px] font-sans px-2 py-0.5 rounded border ${
+                                c.creativeType === 'static' 
+                                  ? 'text-indigo-650 bg-indigo-50/50 border-indigo-150' 
+                                  : 'text-rose-650 bg-rose-50/50 border-rose-150'
+                              }`} title={`Format: ${c.creativeType}`}>
+                                <span className="font-extrabold text-[8px] uppercase opacity-70 font-display">Type:</span>
+                                <span className="font-bold capitalize">{c.creativeType}</span>
+                              </span>
+                            )}
+                            {c.campaignManager && (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-sans text-emerald-700 bg-emerald-50/50 px-2 py-0.5 rounded border border-emerald-150" title={`Manager: ${c.campaignManager}`}>
+                                <span className="font-extrabold text-[8px] uppercase text-emerald-400 font-display">Mgr:</span>
+                                <span className="font-bold">{c.campaignManager}</span>
+                              </span>
+                            )}
+                          </div>
+                        )}
                         
                         {/* Display change log audit details */}
                         {latestLog && (
@@ -1053,8 +1109,14 @@ export default function CampaignList({
                       </td>
 
                       {/* Leads */}
-                      <td className="p-4 text-center font-mono font-bold text-slate-850 whitespace-nowrap">
-                        {leadsVal.toLocaleString()}
+                      <td className="p-4 text-center font-mono whitespace-nowrap">
+                        <div className="font-bold text-slate-850">{leadsVal.toLocaleString()}</div>
+                        <div className="text-[10px] text-slate-500 font-sans mt-0.5" title={c.cpl !== undefined ? "Manual Override target CPL" : "Dynamic computed CPL based on actual spend"}>
+                          <span className="text-[9px] uppercase tracking-wider font-semibold text-slate-400">CPL:</span>{" "}
+                          <span className={`${c.cpl !== undefined ? 'text-indigo-600 font-bold' : 'text-slate-700'} font-mono`}>
+                            {formatINR(c.cpl !== undefined ? c.cpl : (leadsVal > 0 ? (c.spend / leadsVal) : 0))}
+                          </span>
+                        </div>
                       </td>
 
                       {/* SVC Booking */}
@@ -1234,12 +1296,46 @@ export default function CampaignList({
                   <div className="h-px bg-slate-50 my-3" />
 
                   {/* Date information */}
-                  <div className="flex items-center gap-2 text-[10px] text-slate-500 mb-4">
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500 mb-2">
                     <Calendar size={12} className="text-slate-400" />
                     <span>{c.startDate || "N/A"}</span>
                     <span>to</span>
                     <span>{c.endDate || "N/A"}</span>
                   </div>
+
+                  {/* Operational Tags block in Grid Card */}
+                  {(c.adset || c.creativeType || c.campaignManager || c.cpl) && (
+                    <div className="flex flex-wrap gap-1 mb-4 pt-1 bg-slate-50/45 p-1 rounded-lg border border-slate-100/60">
+                      {c.adset && (
+                        <div className="inline-flex items-center gap-1 text-[9.5px] font-sans text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded" title={`Adset: ${c.adset}`}>
+                          <span className="font-extrabold text-[8px] uppercase text-slate-400 font-display">Set:</span>
+                          <span className="font-bold truncate max-w-[85px]">{c.adset}</span>
+                        </div>
+                      )}
+                      {c.creativeType && (
+                        <div className={`inline-flex items-center gap-1 text-[9.5px] font-sans px-1.5 py-0.5 rounded border ${
+                          c.creativeType === 'static' 
+                            ? 'text-indigo-650 bg-indigo-50 border-indigo-150' 
+                            : 'text-rose-650 bg-rose-50 border-rose-150'
+                        }`} title={`Format: ${c.creativeType}`}>
+                          <span className="font-extrabold text-[8px] uppercase font-display opacity-85">Type:</span>
+                          <span className="font-bold capitalize">{c.creativeType}</span>
+                        </div>
+                      )}
+                      {c.campaignManager && (
+                        <div className="inline-flex items-center gap-1 text-[9.5px] font-sans text-emerald-700 bg-emerald-50/50 border border-emerald-150 px-1.5 py-0.5 rounded" title={`Manager: ${c.campaignManager}`}>
+                          <span className="font-extrabold text-[8px] uppercase text-emerald-400 font-display">Mgr:</span>
+                          <span className="font-bold truncate max-w-[90px]">{c.campaignManager}</span>
+                        </div>
+                      )}
+                      <div className="inline-flex items-center gap-0.5 text-[9.5px] font-sans text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded" title={`CPL Metric`}>
+                        <span className="font-extrabold text-[8px] uppercase text-slate-400 font-display">CPL:</span>
+                        <span className="font-mono font-bold text-slate-700">
+                          {formatINR(c.cpl !== undefined ? c.cpl : (c.conversions > 0 ? (c.spend / c.conversions) : 0))}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Metrics grid row */}
                   <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center text-xs">
@@ -2618,6 +2714,67 @@ export default function CampaignList({
                     value={formObjectives}
                     onChange={(e) => setFormObjectives(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-700 resize-none font-sans"
+                  />
+                </div>
+
+                {/* Operational Meta Configuration Header */}
+                <div className="md:col-span-2 border-t border-slate-100 pt-3">
+                  <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                    <Sliders size={13} className="text-indigo-500" />
+                    <span>Operational Metadata &amp; Manager Profile</span>
+                  </h4>
+                  <p className="text-[10.5px] text-slate-500 mb-3">
+                    Assign granular operational owners, specify target Cost Per Lead (CPL) benchmarks, and map direct adset targeting structures.
+                  </p>
+                </div>
+
+                {/* Adset */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Targeting Adset/Ad Group</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. LAL_5%_RealEstate_Buyers"
+                    value={formAdset}
+                    onChange={(e) => setFormAdset(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-705 bg-white"
+                  />
+                </div>
+
+                {/* Creative Format */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Campaign Creative Format Type</label>
+                  <select
+                    value={formCreativeType}
+                    onChange={(e) => setFormCreativeType(e.target.value as "static" | "video")}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-650 bg-white"
+                  >
+                    <option value="static">Static Banner / Image Ad</option>
+                    <option value="video">Pre-roll Video / Reel / Motion Ad</option>
+                  </select>
+                </div>
+
+                {/* Campaign Manager */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Assigned Campaign Manager</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rachel Green / Ad Ops Team"
+                    value={formCampaignManager}
+                    onChange={(e) => setFormCampaignManager(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-705 bg-white"
+                  />
+                </div>
+
+                {/* Manual overriding Target CPL */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Target CPL (INR - ₹)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="Leave empty for auto-calculated spend/leads"
+                    value={formCpl}
+                    onChange={(e) => setFormCpl(e.target.value === "" ? "" : Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-705 bg-white"
                   />
                 </div>
 
