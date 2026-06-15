@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { PortalReportRow } from "../types";
 import { auth } from "../firebase";
+import * as XLSX from "xlsx";
 import {
   Plus,
   Trash2,
@@ -18,7 +19,9 @@ import {
   History,
   X,
   Edit2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Upload,
+  AlertCircle
 } from "lucide-react";
 
 interface PortalReportModuleProps {
@@ -36,6 +39,14 @@ export default function PortalReportModule({
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDate, setEditingDate] = useState<string | null>(null);
   const [editingProject, setEditingProject] = useState<string | null>(null);
+
+  // Bulk Upload states
+  const [showBulkUploadSection, setShowBulkUploadSection] = useState(false);
+  const [parsedRows, setParsedRows] = useState<any[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
 
   // Expanded row details for history/reasons
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
@@ -62,6 +73,187 @@ export default function PortalReportModule({
   const [filterMonth, setFilterMonth] = useState("2026-05"); // Defaulting to May, 2026 as in screen
   const [filterProject, setFilterProject] = useState("all");
   const [filterPortal, setFilterPortal] = useState("all"); // "all", "Housing", "99 Acres", "Magicbricks", "Roof&floor"
+
+  // Excel Spreadsheet Mapper Helper
+  const findHeaderIndex = (headers: string[], possibleNames: string[]) => {
+    return headers.findIndex((h) => {
+      const norm = h.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      return possibleNames.some((pName) => {
+        const normP = pName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        return norm === normP || norm.includes(normP) || normP.includes(norm);
+      });
+    });
+  };
+
+  const handleFileImport = (file: File) => {
+    setUploadError(null);
+    setUploadSuccessMessage(null);
+    setFileName(file.name);
+
+    const isCsv = file.name.endsWith(".csv") || file.type.includes("csv");
+    const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls") || file.type.includes("sheet") || file.type.includes("excel");
+
+    if (!isCsv && !isExcel) {
+      setUploadError("Please upload a valid spreadsheet file (.xlsx, .xls, .csv).");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const bstr = e.target?.result;
+        if (!bstr) {
+          setUploadError("Could not read file data.");
+          return;
+        }
+
+        const workbook = XLSX.read(bstr, { type: "binary" });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+        if (jsonData.length < 2) {
+          setUploadError("The file does not contain enough data (missing headers or rows).");
+          return;
+        }
+
+        const headers = jsonData[0].map((h: any) => String(h || "").trim());
+
+        // Find matches
+        const dateIdx = findHeaderIndex(headers, ["date", "configuration date", "day"]);
+        const projIdx = findHeaderIndex(headers, ["project", "project name", "project trace", "property"]);
+        const portalIdx = findHeaderIndex(headers, ["portal", "portal name", "source", "platform"]);
+        const genIdx = findHeaderIndex(headers, ["generated leads", "leads generated", "generated", "leads", "lead count"]);
+        const svsIdx = findHeaderIndex(headers, ["svs", "svs scheduled", "scheduled site visits", "scheduled", "site visits scheduled"]);
+        const svcIdx = findHeaderIndex(headers, ["svc", "site visits conducted", "conducted site visits", "conducted", "site visits conducted", "site visits", "svc conducted"]);
+        const walkinIdx = findHeaderIndex(headers, ["walkin", "walk-in", "walkins"]);
+        const grossIdx = findHeaderIndex(headers, ["gross", "gross booking", "gross bookings"]);
+        const netIdx = findHeaderIndex(headers, ["net", "net booking", "net bookings"]);
+        const reasonIdx = findHeaderIndex(headers, ["edit reason", "reason", "modification reason", "comment", "remarks"]);
+
+        if (dateIdx === -1 || projIdx === -1 || portalIdx === -1) {
+          setUploadError("Required columns mapping failed. File must contain at least 'Date', 'Project', and 'Portal' columns.");
+          return;
+        }
+
+        const rowsToPreview: any[] = [];
+        for (let i = 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row || row.length === 0) continue;
+
+          const isAllEmpty = row.every((val: any) => val === undefined || val === null || String(val).trim() === "");
+          if (isAllEmpty) continue;
+
+          const rowDateRaw = String(row[dateIdx] || "").trim();
+          let rowDate = rowDateRaw;
+
+          // Excel date serial number parsing
+          if (/^\d+(\.\d+)?$/.test(rowDateRaw)) {
+            const serial = parseFloat(rowDateRaw);
+            const dateObj = new Date((serial - 25569) * 86450 * 1000);
+            if (!isNaN(dateObj.getTime())) {
+              rowDate = dateObj.toISOString().split("T")[0];
+            }
+          } else {
+            // "30/05/2026" or "30-05-2026"
+            const parts = rowDateRaw.split(/[-/]/);
+            if (parts.length === 3) {
+              if (parts[0].length === 4) {
+                rowDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+              } else if (parts[2].length === 4) {
+                rowDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+              }
+            }
+          }
+
+          if (!rowDate) {
+            rowDate = new Date().toISOString().split("T")[0];
+          }
+
+          const project = projIdx >= 0 ? String(row[projIdx] || "").trim() : "Skyline Residency";
+          const portalRaw = portalIdx >= 0 ? String(row[portalIdx] || "").trim() : "Housing";
+          
+          let portal = portalRaw;
+          const pLower = portalRaw.toLowerCase();
+          if (pLower.includes("housing")) portal = "Housing";
+          else if (pLower.includes("99") || pLower.includes("acres")) portal = "99 Acres";
+          else if (pLower.includes("magic") || pLower.includes("brick")) portal = "Magicbricks";
+          else if (pLower.includes("roof") || pLower.includes("floor") || pLower.includes("rf")) portal = "Roof&floor";
+
+          const generated = genIdx >= 0 ? parseInt(String(row[genIdx])) || 0 : 0;
+          const svs = svsIdx >= 0 ? parseInt(String(row[svsIdx])) || 0 : 0;
+          const svc = svcIdx >= 0 ? parseInt(String(row[svcIdx])) || 0 : 0;
+          const walkin = walkinIdx >= 0 ? parseInt(String(row[walkinIdx])) || 0 : 0;
+          const gross = grossIdx >= 0 ? parseInt(String(row[grossIdx])) || 0 : 0;
+          const net = netIdx >= 0 ? parseInt(String(row[netIdx])) || 0 : 0;
+          const editReason = reasonIdx >= 0 ? String(row[reasonIdx] || "").trim() : "Spreadsheet Bulk Upload";
+
+          rowsToPreview.push({
+            date: rowDate,
+            project,
+            portal,
+            generated,
+            svs,
+            svc,
+            walkin,
+            gross,
+            net,
+            editReason
+          });
+        }
+
+        if (rowsToPreview.length === 0) {
+          setUploadError("No valid rows could be parsed from the uploaded spreadsheet.");
+          return;
+        }
+
+        setParsedRows(rowsToPreview);
+      } catch (err: any) {
+        console.error(err);
+        setUploadError(`Failed to parse file: ${err.message || "Invalid or corrupt template format"}`);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleCommitPortalData = async () => {
+    const activeEmail = auth?.currentUser?.email || "gouthamarun123@gmail.com";
+    
+    for (const item of parsedRows) {
+      const existingRow = portalReports.find(
+        (r) => r.date === item.date && r.project === item.project && r.portal === item.portal
+      );
+
+      const rId = existingRow ? existingRow.id : "p-rep-" + Math.random().toString(36).substring(2, 9);
+      
+      const payload: PortalReportRow = {
+        id: rId,
+        date: item.date,
+        project: item.project,
+        portal: item.portal,
+        generated: item.generated,
+        svs: item.svc || item.svs || 0,
+        svc: item.svc || 0,
+        walkin: item.walkin || 0,
+        gross: item.gross || 0,
+        net: item.net || 0,
+        createdAt: existingRow?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        editReason: item.editReason || "Excel Bulk Upload",
+        editedBy: activeEmail,
+      };
+
+      await onSaveReport(payload);
+    }
+
+    setUploadSuccessMessage(`Successfully processed and loaded ${parsedRows.length} portal report records!`);
+    setParsedRows([]);
+    setFileName(null);
+    setTimeout(() => {
+      setShowBulkUploadSection(false);
+      setUploadSuccessMessage(null);
+    }, 3000);
+  };
 
   // Preloaded template downloader
   const downloadPortalTemplate = () => {
@@ -379,7 +571,205 @@ export default function PortalReportModule({
           <h1 className="text-xl font-bold text-slate-800 tracking-tight">Portal Leads and SVC</h1>
           <p className="text-xs text-slate-450 mt-1">Group and review daily leads and site visits conducted across property portals.</p>
         </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBulkUploadSection(!showBulkUploadSection)}
+            className={`flex items-center gap-2 font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer border ${
+              showBulkUploadSection
+                ? "bg-indigo-50 border-indigo-250 text-indigo-700"
+                : "bg-white border-slate-200 hover:bg-slate-100 text-slate-705"
+            }`}
+            type="button"
+          >
+            <FileSpreadsheet size={14} className="text-indigo-650" />
+            <span>Bulk Upload Portal Data</span>
+          </button>
+          <button
+            onClick={handleOpenAdd}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 font-bold text-xs text-white px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
+            type="button"
+          >
+            <Plus size={14} />
+            <span>Add Single Log</span>
+          </button>
+        </div>
       </div>
+
+      {showBulkUploadSection && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 animate-fade-in" id="portal-bulk-upload-card">
+          <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Bulk Upload Spreadsheet (Excel / CSV)</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Upload a daily portal performance ledger with respective fields to sync directly.</p>
+            </div>
+            <button
+              onClick={() => setShowBulkUploadSection(false)}
+              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="md:col-span-1 space-y-4">
+              <div
+                className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[160px] ${
+                  isDragOver
+                    ? "border-indigo-500 bg-indigo-50/30 text-indigo-705"
+                    : "border-slate-250 bg-slate-50/50 hover:bg-slate-50 text-slate-600"
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(true);
+                }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) handleFileImport(file);
+                }}
+                onClick={() => document.getElementById("portal-spreadsheet-file-picker")?.click()}
+              >
+                <input
+                  id="portal-spreadsheet-file-picker"
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileImport(file);
+                  }}
+                />
+                <Upload size={32} className={`mb-3 ${isDragOver ? "text-indigo-600 animate-bounce" : "text-slate-400"}`} />
+                <p className="text-xs font-bold text-slate-705">
+                  {fileName ? "Selected:" : "Drag & drop file here, or"} <span className="text-indigo-650 underline">browse</span>
+                </p>
+                <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
+                  Supports .xlsx, .xls, .csv
+                </p>
+                {fileName && (
+                  <span className="mt-2 text-[11px] font-mono font-bold text-slate-800 bg-white px-2 py-0.5 border border-slate-200 rounded">
+                    {fileName}
+                  </span>
+                )}
+              </div>
+
+              <div className="bg-amber-50/40 border border-amber-100 rounded-xl p-4 space-y-2 text-xs">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 flex items-center gap-1 font-mono">
+                  <Info size={12} className="text-amber-600" />
+                  Required spreadsheet columns
+                </span>
+                <p className="text-slate-600 leading-relaxed text-[11px]">
+                  The uploaded spreadsheet should contain headers matching: <strong className="text-slate-800 font-bold">Date</strong>, <strong className="text-slate-800 font-bold">Project</strong>, <strong className="text-slate-800 font-bold">Portal Name</strong>, and numeric metric values for <strong className="text-slate-850">Leads</strong> and <strong className="text-indigo-700">SVC/Site Visits</strong>.
+                </p>
+                <button
+                  onClick={downloadPortalTemplate}
+                  type="button"
+                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 pt-1 cursor-pointer"
+                >
+                  <Download size={11} />
+                  <span>Download Sample template</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="md:col-span-2 space-y-4">
+              {uploadError && (
+                <div className="bg-rose-50 border border-rose-150 rounded-xl p-4 flex items-start gap-2.5 text-xs text-rose-850 font-medium">
+                  <AlertCircle size={15} className="shrink-0 mt-0.5 text-rose-550" />
+                  <div>
+                    <span className="font-bold">Parsing Error</span>
+                    <p className="mt-1 font-sans text-rose-700 leading-relaxed font-semibold">{uploadError}</p>
+                  </div>
+                </div>
+              )}
+
+              {uploadSuccessMessage && (
+                <div className="bg-emerald-50 border border-emerald-150 rounded-xl p-4 flex items-start gap-2.5 text-xs text-emerald-850 font-medium">
+                  <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-555" />
+                  <div>
+                    <span className="font-bold">Sync Completed</span>
+                    <p className="mt-1 font-sans text-emerald-750 leading-relaxed font-semibold">{uploadSuccessMessage}</p>
+                  </div>
+                </div>
+              )}
+
+              {parsedRows.length > 0 ? (
+                <div className="space-y-3.5">
+                  <div className="flex flex-wrap gap-2 justify-between items-center bg-slate-50 p-2 border border-slate-150 rounded-lg">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wide text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md font-sans">
+                      Detected {parsedRows.length} Ledger Records
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setParsedRows([]);
+                          setFileName(null);
+                        }}
+                        className="text-xs font-bold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+                      >
+                        Reset
+                      </button>
+                      <button
+                        onClick={handleCommitPortalData}
+                        className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-3.5 py-1.5 rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                      >
+                        <CheckCircle2 size={13} />
+                        Confirm & Load to Portal
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-56 overflow-y-auto shadow-2xs">
+                    <table className="w-full text-left font-mono text-[11px] border-collapse bg-white">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-tight text-[9.5px] select-none font-sans font-extrabold">
+                        <tr>
+                          <th className="p-2 border-r border-slate-200">Date</th>
+                          <th className="p-2 border-r border-slate-200">Project</th>
+                          <th className="p-2 border-r border-slate-200">Portal</th>
+                          <th className="p-2 border-r border-slate-200 text-right">Leads</th>
+                          <th className="p-2 border-r border-slate-200 text-right">SVC</th>
+                          <th className="p-2">Reason (Traceable)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium text-slate-700 bg-white">
+                        {parsedRows.map((row, idx) => (
+                          <tr key={idx} className="hover:bg-indigo-50/20 transition-colors">
+                            <td className="p-2 border-r border-slate-150 font-bold text-slate-800">{row.date}</td>
+                            <td className="p-2 border-r border-slate-150 truncate max-w-[120px]" title={row.project}>{row.project}</td>
+                            <td className="p-2 border-r border-slate-150 font-sans font-bold">
+                              <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                row.portal === "Housing" ? "bg-amber-100 text-amber-800 border-amber-150 border" :
+                                row.portal === "99 Acres" ? "bg-amber-50 text-amber-700 border-amber-100 border" :
+                                row.portal === "Magicbricks" ? "bg-orange-100 text-orange-850 text-orange-800 border border-orange-150" :
+                                row.portal === "Roof&floor" ? "bg-rose-100 text-rose-800 border border-rose-150" : "bg-slate-100 text-slate-800"
+                              }`}>
+                                {row.portal}
+                              </span>
+                            </td>
+                            <td className="p-2 border-r border-slate-150 text-right font-bold font-mono">{row.generated}</td>
+                            <td className="p-2 border-r border-slate-150 text-right font-bold text-indigo-650 font-mono">{row.svc}</td>
+                            <td className="p-2 font-sans truncate max-w-[140px] text-slate-500 italic" title={row.editReason}>"{row.editReason}"</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full min-h-[160px] flex flex-col items-center justify-center p-10 border border-dashed border-slate-200 rounded-xl bg-slate-50/20 text-center">
+                  <FileSpreadsheet className="text-slate-300 mb-2" size={32} />
+                  <p className="text-xs font-semibold text-slate-600">No spreadsheet records parsed yet</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 max-w-sm">
+                    Upload or drag/drop your excel/csv format above. It will extract and display visual mapping validation rows here before committing to the system.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FILTERS BAR EXACTLY LIKE SCREENSHOT */}
       <div className="bg-white p-5 rounded-2xl border border-slate-150 shadow-xs flex flex-wrap gap-6 items-center">
