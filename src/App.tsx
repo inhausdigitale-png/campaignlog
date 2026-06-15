@@ -539,6 +539,10 @@ export default function App() {
         objectives: `Project: ${perf.projectName || "Default"} | Adset: ${perf.adsetName || "Default"} (Uploaded)`,
         createdAt: perf.createdAt || new Date().toISOString(),
         updatedAt: perf.createdAt || new Date().toISOString(),
+        adset: perf.adsetName,
+        creativeType: perf.creativeType,
+        campaignManager: perf.campaignManager,
+        cpl: perf.cpl,
       };
     });
   const mergedCampaigns = [...campaigns, ...mappedPerformanceCampaigns];

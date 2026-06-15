@@ -273,6 +273,9 @@ export interface CampaignPerformance {
   creativeImageUrl?: string;
   creativeUpdatedAt?: string;
   creativeNewUpdatedFlag?: boolean;
+  creativeType?: "static" | "video";
+  campaignManager?: string;
+  cpl?: number;
 }
 
 

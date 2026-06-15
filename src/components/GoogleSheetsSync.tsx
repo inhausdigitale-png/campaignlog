@@ -487,6 +487,9 @@ export default function GoogleSheetsSync({
       const clicksIdx = normHeaders.findIndex(h => h.includes("clicks") || h.includes("click"));
       const svcIdx = normHeaders.findIndex(h => h.includes("svc") || h.includes("visits") || h.includes("visit"));
       const bookedIdx = normHeaders.findIndex(h => h.includes("booked") || h.includes("bookings") || h.includes("won"));
+      const creativeTypeIdx = normHeaders.findIndex(h => h.includes("format") || h.includes("creative type") || h.includes("media type") || h.includes("type"));
+      const managerIdx = normHeaders.findIndex(h => h.includes("manager") || h.includes("owner") || h.includes("ops") || h.includes("run by"));
+      const cplIdx = normHeaders.findIndex(h => h === "cpl" || h.includes("cost per lead") || h.includes("target cpl"));
 
       if (campaignIdx !== -1) mapping["campaignName"] = campaignIdx;
       if (adsetIdx !== -1) mapping["adsetName"] = adsetIdx;
@@ -500,6 +503,9 @@ export default function GoogleSheetsSync({
       if (clicksIdx !== -1) mapping["clicks"] = clicksIdx;
       if (svcIdx !== -1) mapping["svc"] = svcIdx;
       if (bookedIdx !== -1) mapping["booked"] = bookedIdx;
+      if (creativeTypeIdx !== -1) mapping["creativeType"] = creativeTypeIdx;
+      if (managerIdx !== -1) mapping["campaignManager"] = managerIdx;
+      if (cplIdx !== -1) mapping["cpl"] = cplIdx;
     } 
     else if (syncType === "targets") {
       // targets fields: Month (YYYY-MM), Project, Medium/Channel, Budget, Total Lead Target, Total Lead Achieved, Digital Lead Target, Digital Lead Achieved, ...
@@ -718,6 +724,9 @@ export default function GoogleSheetsSync({
         const clicksCol = columnMapping["clicks"];
         const svcCol = columnMapping["svc"];
         const bookedCol = columnMapping["booked"];
+        const creativeTypeCol = columnMapping["creativeType"];
+        const managerCol = columnMapping["campaignManager"];
+        const cplCol = columnMapping["cpl"];
 
         const campaignName = campaignCol !== undefined && row[campaignCol] ? row[campaignCol].trim() : "Spreadsheet Campaign";
         const adsetName = adsetCol !== undefined && row[adsetCol] ? row[adsetCol].trim() : "Spreadsheet Adset";
@@ -731,6 +740,16 @@ export default function GoogleSheetsSync({
         const clicksNum = clicksCol !== undefined && row[clicksCol] ? parseInt(row[clicksCol].replace(/[^0-9]/g, "")) || 0 : 0;
         const svcNum = svcCol !== undefined && row[svcCol] ? parseInt(row[svcCol].replace(/[^0-9]/g, "")) || 0 : 0;
         const bookedNum = bookedCol !== undefined && row[bookedCol] ? parseInt(row[bookedCol].replace(/[^0-9]/g, "")) || 0 : 0;
+
+        let creativeType: "static" | "video" = "static";
+        if (creativeTypeCol !== undefined && row[creativeTypeCol]) {
+          const val = row[creativeTypeCol].toLowerCase();
+          if (val.includes("video") || val.includes("reel") || val.includes("motion") || val.includes("youtube") || val.includes("mp4")) {
+            creativeType = "video";
+          }
+        }
+        const campaignManager = managerCol !== undefined && row[managerCol] ? row[managerCol].trim() : undefined;
+        const cplVal = cplCol !== undefined && row[cplCol] ? parseFloat(row[cplCol].replace(/[^\d.]/g, "")) || undefined : undefined;
 
         parsed.push({
           id: `perf-g-${Math.random().toString(36).substring(2, 9)}`,
@@ -746,8 +765,11 @@ export default function GoogleSheetsSync({
           clicks: clicksNum,
           svc: svcNum,
           booked: bookedNum,
-          cplCpa: leadsNum > 0 ? Math.round(spendNum / leadsNum) : 0,
-          createdAt: new Date().toISOString()
+          cplCpa: cplVal !== undefined ? cplVal : (leadsNum > 0 ? Math.round(spendNum / leadsNum) : 0),
+          createdAt: new Date().toISOString(),
+          creativeType,
+          campaignManager,
+          cpl: cplVal
         } as CampaignPerformance);
       } 
       else if (syncType === "targets") {
@@ -1665,6 +1687,70 @@ export default function GoogleSheetsSync({
                                 ))}
                               </select>
                             </div>
+                            {/* Adset */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Adset / Ad Group:</span>
+                              <select
+                                value={columnMapping["adsetName"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, adsetName: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* Creative Format */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Creative format (static/video):</span>
+                              <select
+                                value={columnMapping["creativeType"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, creativeType: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* Campaign Manager */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Campaign Manager:</span>
+                              <select
+                                value={columnMapping["campaignManager"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, campaignManager: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* Target CPL */}
+                            <div className="space-y-1">
+                              <span className="text-[10.5px] text-slate-500 font-medium">Target Cost Per Lead (CPL):</span>
+                              <select
+                                value={columnMapping["cpl"] ?? ""}
+                                onChange={(e) => setColumnMapping({ ...columnMapping, cpl: parseInt(e.target.value) })}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-700 focus:outline-none cursor-pointer"
+                              >
+                                <option value="">-- Ignore / Skip --</option>
+                                {headers.map((h, idx) => (
+                                  <option key={idx} value={idx}>
+                                    Column {idx + 1}: {h || `Unnamed (${idx})`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </>
                         )}
 
@@ -1871,8 +1957,11 @@ export default function GoogleSheetsSync({
                                     <th className="p-2">Campaign</th>
                                     <th className="p-2">Adset</th>
                                     <th className="p-2">Project</th>
+                                    <th className="p-2">Format</th>
+                                    <th className="p-2">Manager</th>
                                     <th className="p-2">Spends</th>
                                     <th className="p-2">Leads</th>
+                                    <th className="p-2">CPL</th>
                                   </>
                                 )}
                                 {syncType === "targets" && (
@@ -1912,8 +2001,13 @@ export default function GoogleSheetsSync({
                                       <td className="p-2 font-bold text-slate-900">{item.campaignName}</td>
                                       <td className="p-2 truncate">{item.adsetName}</td>
                                       <td className="p-2">{item.projectName}</td>
+                                      <td className="p-2 capitalize text-slate-500 font-medium">{item.creativeType || "static"}</td>
+                                      <td className="p-2 text-slate-500">{item.campaignManager || "—"}</td>
                                       <td className="p-2 font-mono text-emerald-600 font-semibold">₹{item.amountSpend.toLocaleString()}</td>
                                       <td className="p-2 font-bold font-mono">{item.leads}</td>
+                                      <td className="p-2 font-bold font-mono text-indigo-650">
+                                        {item.cpl !== undefined ? `₹${item.cpl}` : (item.leads > 0 ? `₹${Math.round(item.amountSpend / item.leads)}` : "—")}
+                                      </td>
                                     </>
                                   )}
                                   {syncType === "targets" && (
