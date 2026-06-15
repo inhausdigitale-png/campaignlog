@@ -1393,33 +1393,33 @@ export default function CampaignList({
               </div>
             );
           })}
-          
-          {/* Admin Database Control panel */}
-          {rolePermission?.role === "Admin" && (
-            <div className="mt-8 p-6 bg-rose-50/40 border border-red-100 rounded-2xl space-y-4" id="admin-campaign-purger-zone">
-              <div className="flex items-center gap-2 text-rose-600 font-bold text-xs uppercase tracking-wider">
-                <Sliders size={16} className="text-rose-650 shrink-0" />
-                <span>Super Admin Campaigns Control Panel</span>
-              </div>
-              <p className="text-xs text-slate-500 font-sans leading-relaxed">
-                Highly sensitive action panel. You possess administrative clearance to purge all configured active ad campaigns, creative mappings, performance history nodes, and audit ledger logs. This action resets your performance dashboards completely.
-              </p>
-              <div>
-                <button
-                  type="button"
-                  onClick={handleClearCampaignsWithConfirmation}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-rose-100 text-rose-750 font-bold rounded-lg border border-red-200 hover:border-red-300 transition-all text-xs cursor-pointer"
-                >
-                  <Trash2 size={13} />
-                  <span>Purge All Campaigns &amp; Audits</span>
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
-        </>
+
+      {/* Admin Database Control panel */}
+      {rolePermission?.role === "Admin" && (
+        <div className="mt-8 p-6 bg-rose-50/40 border border-red-100 rounded-2xl space-y-4 shadow-3xs" id="admin-campaign-purger-zone">
+          <div className="flex items-center gap-2 text-rose-600 font-bold text-xs uppercase tracking-wider">
+            <Sliders size={16} className="text-rose-650 shrink-0" />
+            <span>Super Admin Campaigns Control Panel</span>
+          </div>
+          <p className="text-xs text-slate-505 font-sans leading-relaxed">
+            Highly sensitive action panel. You possess administrative clearance to purge all configured active ad campaigns, creative mappings, performance history nodes, and audit ledger logs. This action resets your performance dashboards completely.
+          </p>
+          <div>
+            <button
+              type="button"
+              onClick={handleClearCampaignsWithConfirmation}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-rose-100 text-rose-750 font-bold rounded-lg border border-red-200 hover:border-red-300 transition-all text-xs cursor-pointer shadow-3xs hover:shadow-2xs"
+            >
+              <Trash2 size={13} />
+              <span>Purge All Campaigns &amp; Audits</span>
+            </button>
+          </div>
+        </div>
       )}
+    </>
+  )}
 
       {campaignSubTab === "ledger" && (
         <div className="space-y-6 animate-fade-in text-slate-800" id="campaign-change-ledger-and-dashboard">
