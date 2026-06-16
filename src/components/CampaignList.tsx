@@ -7,7 +7,7 @@ import {
   Filter,
   Trash2,
   Edit,
-  DollarSign,
+  IndianRupee,
   Calendar,
   Layers,
   Sparkles,
@@ -162,6 +162,22 @@ export default function CampaignList({
   const [formCampaignManager, setFormCampaignManager] = useState("");
   const [formCpl, setFormCpl] = useState<number | "">("");
 
+  // Bulk selection and bulk edit state variables
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([]);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<Campaign["status"] | "keep">("keep");
+  const [bulkPlatform, setBulkPlatform] = useState<Campaign["platform"] | "keep">("keep");
+  const [bulkAdset, setBulkAdset] = useState("");
+  const [bulkAdsetMode, setBulkAdsetMode] = useState<"keep" | "set" | "clear">("keep");
+  const [bulkCreativeType, setBulkCreativeType] = useState<"static" | "video" | "keep">("keep");
+  const [bulkCampaignManager, setBulkCampaignManager] = useState("");
+  const [bulkCampaignManagerMode, setBulkCampaignManagerMode] = useState<"keep" | "set" | "clear">("keep");
+  const [bulkCpl, setBulkCpl] = useState<number | "">("");
+  const [bulkCplMode, setBulkCplMode] = useState<"keep" | "set" | "clear">("keep");
+  const [bulkBudget, setBulkBudget] = useState<number | "">("");
+  const [bulkBudgetMode, setBulkBudgetMode] = useState<"keep" | "set">("keep");
+  const [bulkEditReason, setBulkEditReason] = useState("");
+
   const platformOptions: Campaign["platform"][] = [
     "Google Ads",
     "Meta (Facebook)",
@@ -313,6 +329,106 @@ export default function CampaignList({
     }
 
     setShowModal(false);
+  };
+
+  const handleBulkEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedCampaignIds.length === 0) return;
+
+    const reasonText = bulkEditReason.trim() || "Bulk parameter updates on select operational cohorts.";
+    const processedCampaigns = campaigns.filter((c) => selectedCampaignIds.includes(c.id));
+
+    for (const c of processedCampaigns) {
+      const changesList: string[] = [];
+      const updatedCamp: Campaign = { ...c, updatedAt: new Date().toISOString() };
+
+      if (bulkStatus !== "keep") {
+        changesList.push(`Status: "${c.status}" ➔ "${bulkStatus}"`);
+        updatedCamp.status = bulkStatus;
+      }
+      if (bulkPlatform !== "keep") {
+        changesList.push(`Platform: "${c.platform}" ➔ "${bulkPlatform}"`);
+        updatedCamp.platform = bulkPlatform;
+      }
+      if (bulkAdsetMode === "set") {
+        changesList.push(`Adset: "${c.adset || "None"}" ➔ "${bulkAdset}"`);
+        updatedCamp.adset = bulkAdset.trim() || undefined;
+      } else if (bulkAdsetMode === "clear") {
+        changesList.push(`Adset: "${c.adset || "None"}" ➔ "Cleared"`);
+        updatedCamp.adset = undefined;
+      }
+
+      if (bulkCreativeType !== "keep") {
+        changesList.push(`Format: "${c.creativeType || "static"}" ➔ "${bulkCreativeType}"`);
+        updatedCamp.creativeType = bulkCreativeType;
+      }
+
+      if (bulkCampaignManagerMode === "set") {
+        changesList.push(`Manager: "${c.campaignManager || "None"}" ➔ "${bulkCampaignManager}"`);
+        updatedCamp.campaignManager = bulkCampaignManager.trim() || undefined;
+      } else if (bulkCampaignManagerMode === "clear") {
+        changesList.push(`Manager: "${c.campaignManager || "None"}" ➔ "Cleared"`);
+        updatedCamp.campaignManager = undefined;
+      }
+
+      if (bulkCplMode === "set" && bulkCpl !== "") {
+        changesList.push(`Target CPL: "${c.cpl ?? "None"}" ➔ "${bulkCpl}"`);
+        updatedCamp.cpl = Number(bulkCpl);
+      } else if (bulkCplMode === "clear") {
+        changesList.push(`Target CPL: "${c.cpl ?? "None"}" ➔ "Cleared"`);
+        updatedCamp.cpl = undefined;
+      }
+
+      if (bulkBudgetMode === "set" && bulkBudget !== "") {
+        changesList.push(`Budget: ₹${c.budget.toLocaleString()} ➔ ₹${Number(bulkBudget).toLocaleString()}`);
+        updatedCamp.budget = Number(bulkBudget);
+      }
+
+      if (changesList.length > 0) {
+        await onSaveCampaign(updatedCamp);
+
+        if (onSaveChangeLog) {
+          const chgLog: ChangeLogEntry = {
+            id: "chg-" + Math.random().toString(36).substring(2, 9),
+            date: new Date().toISOString().split("T")[0],
+            project: updatedCamp.platform,
+            campaignId: updatedCamp.id,
+            campaignName: updatedCamp.name,
+            adSetName: updatedCamp.adset || "Primary",
+            campaignStatus: updatedCamp.status,
+            type: "Parameter Adjustment",
+            changed: changesList.join(", "),
+            reason: reasonText,
+            createdAt: new Date().toISOString()
+          };
+          await onSaveChangeLog(chgLog);
+        }
+      }
+    }
+
+    // Reset selection and close modal
+    setSelectedCampaignIds([]);
+    setShowBulkEditModal(false);
+
+    // Reset bulk modal state
+    setBulkStatus("keep");
+    setBulkPlatform("keep");
+    setBulkAdset("");
+    setBulkAdsetMode("keep");
+    setBulkCreativeType("keep");
+    setBulkCampaignManager("");
+    setBulkCampaignManagerMode("keep");
+    setBulkCpl("");
+    setBulkCplMode("keep");
+    setBulkBudget("");
+    setBulkBudgetMode("keep");
+    setBulkEditReason("");
+
+    setFeedbackAlert({
+      isOpen: true,
+      title: "Bulk Update Complete",
+      message: `Successfully processed parameter optimizations for ${processedCampaigns.length} campaigns.`
+    });
   };
 
   // Open modal for editing or adding comparative metrics
@@ -476,7 +592,7 @@ export default function CampaignList({
         setQuickLogChanged(`Optimized budget and audience demographics for ${matchedCamp.name}`);
       }
       if (!quickLogReasonText || quickLogReasonText.trim() === "") {
-        const roasVal = matchedCamp.spend > 0 ? ((matchedCamp.conversions * 149) / matchedCamp.spend).toFixed(1) : "0.0";
+        const roasVal = matchedCamp.spend > 0 ? ((matchedCamp.conversions * 12000) / matchedCamp.spend).toFixed(1) : "0.0";
         setQuickLogReasonText(`Audited performance of campaign "${matchedCamp.name}" on ${matchedCamp.platform}. Status: ${matchedCamp.status}. Recorded clicks: ${matchedCamp.clicks?.toLocaleString() || 0} with ${matchedCamp.conversions || 0} conversions achieving an estimated ${roasVal}x ROAS.`);
       }
     }
@@ -744,7 +860,7 @@ export default function CampaignList({
         {/* Card 5: Amount Spent */}
         <div className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-xs flex items-center gap-3.5 hover:border-slate-350 hover:shadow-sm transition-all">
           <div className="p-2.5 rounded-lg bg-sky-50 text-sky-600 shrink-0">
-            <DollarSign size={17} />
+            <IndianRupee size={17} />
           </div>
           <div className="min-w-0">
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block leading-tight">Amount Spent</span>
@@ -899,6 +1015,61 @@ export default function CampaignList({
         </div>
       </div>
 
+      {/* Bulk actions banner */}
+      {selectedCampaignIds.length > 0 && (
+        <div className="mb-4 bg-indigo-50 border border-indigo-200/80 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 animate-slide-up shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-600 text-white rounded-lg">
+              <Sliders size={16} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-800">
+                Bulk Edit Workspace Active
+              </p>
+              <p className="text-[10.5px] text-slate-500 font-medium">
+                You have selected <span className="font-extrabold text-indigo-600">{selectedCampaignIds.length}</span> campaigns for bulk modification.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+            <button
+              type="button"
+              onClick={() => setSelectedCampaignIds([])}
+              className="flex-1 sm:flex-none text-center px-3 py-1.5 border border-slate-250 bg-white rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
+            >
+              Clear Selection
+            </button>
+            {rolePermission.canEditCampaigns ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkStatus("keep");
+                  setBulkPlatform("keep");
+                  setBulkAdset("");
+                  setBulkAdsetMode("keep");
+                  setBulkCreativeType("keep");
+                  setBulkCampaignManager("");
+                  setBulkCampaignManagerMode("keep");
+                  setBulkCpl("");
+                  setBulkCplMode("keep");
+                  setBulkBudget("");
+                  setBulkBudgetMode("keep");
+                  setBulkEditReason("");
+                  setShowBulkEditModal(true);
+                }}
+                className="flex-1 sm:flex-none text-center px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
+              >
+                Bulk Edit Parameters
+              </button>
+            ) : (
+              <div className="text-xs text-rose-600 font-semibold italic">
+                Editing privileges locked
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Campaigns Listing */}
       {filteredCampaigns.length === 0 ? (
         <div className="p-16 text-center bg-white rounded-xl border border-slate-200 shadow-xs">
@@ -915,6 +1086,20 @@ export default function CampaignList({
             <table className="w-full text-left border-collapse text-xs min-w-[1000px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-650 font-bold font-display">
+                  <th className="p-4 w-[45px] text-center">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-indigo-600 checked:bg-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer accent-indigo-600"
+                      checked={filteredCampaigns.length > 0 && selectedCampaignIds.length === filteredCampaigns.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedCampaignIds(filteredCampaigns.map((c) => c.id));
+                        } else {
+                          setSelectedCampaignIds([]);
+                        }
+                      }}
+                    />
+                  </th>
                   <th className="p-4 w-[340px]">Campaign &amp; Platform</th>
                   <th className="p-4 text-center">Status</th>
                   <th className="p-4 text-center">Date Range</th>
@@ -932,7 +1117,7 @@ export default function CampaignList({
                   const spendRatio = c.budget > 0 ? (c.spend / c.budget) * 100 : 0;
                   const leadsVal = c.leads ?? c.conversions ?? 0;
                   const svcVal = c.svcBooking ?? 0;
-                  const roas = c.spend > 0 ? ((leadsVal * 149) / c.spend).toFixed(1) : "0.0";
+                  const roas = c.spend > 0 ? ((leadsVal * 12000) / c.spend).toFixed(1) : "0.0";
                   const clicksCTR = c.impressions > 0 ? ((c.clicks / c.impressions) * 100).toFixed(2) : "0.00";
                   const svcPercent = leadsVal > 0 ? ((svcVal / leadsVal) * 100).toFixed(1) : "0.0";
 
@@ -946,6 +1131,21 @@ export default function CampaignList({
 
                   return (
                     <tr key={c.id} className="hover:bg-slate-50/40 transition-all">
+                      {/* Selection checkbox */}
+                      <td className="p-4 text-center">
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-300 text-indigo-600 checked:bg-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer accent-indigo-600"
+                          checked={selectedCampaignIds.includes(c.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCampaignIds([...selectedCampaignIds, c.id]);
+                            } else {
+                              setSelectedCampaignIds(selectedCampaignIds.filter((id) => id !== c.id));
+                            }
+                          }}
+                        />
+                      </td>
                       {/* Campaign & Platform */}
                       <td className="p-4 space-y-1.5 whitespace-normal">
                         <div className="font-bold text-slate-900 text-sm font-display leading-tight">{c.name}</div>
@@ -1195,7 +1395,7 @@ export default function CampaignList({
 
                 {/* TABLE BOTTOM SUMMARY TOTALS ROW */}
                 <tr className="bg-slate-50/80 border-t border-slate-200 text-slate-900 font-bold">
-                  <td className="p-4 text-slate-800 text-[11px] font-extrabold uppercase tracking-wider font-sans" colSpan={3}>
+                  <td className="p-4 text-slate-800 text-[11px] font-extrabold uppercase tracking-wider font-sans" colSpan={4}>
                     Summary Totals ({filteredCampaigns.length} Campaigns)
                   </td>
                   <td className="p-4 text-center font-mono whitespace-nowrap text-slate-900 font-bold">
@@ -1233,7 +1433,7 @@ export default function CampaignList({
                     {(() => {
                       const spent = filteredCampaigns.reduce((sum, c) => sum + c.spend, 0);
                       const leads = filteredCampaigns.reduce((sum, c) => sum + (c.leads ?? c.conversions ?? 0), 0);
-                      return spent > 0 ? `${((leads * 149) / spent).toFixed(1)}x` : "0.0x";
+                      return spent > 0 ? `${((leads * 12000) / spent).toFixed(1)}x` : "0.0x";
                     })()}
                   </td>
                   <td className="p-4"></td>
@@ -1248,7 +1448,7 @@ export default function CampaignList({
           {filteredCampaigns.map((c) => {
             // Spend ratio helper
             const spendRatio = c.budget > 0 ? (c.spend / c.budget) * 100 : 0;
-            const roas = c.spend > 0 ? ((c.conversions * 149) / c.spend).toFixed(1) : "0.0"; // Simulated average checkout value of $149/conv
+            const roas = c.spend > 0 ? ((c.conversions * 12000) / c.spend).toFixed(1) : "0.0"; // Simulated average checkout value of ₹12,000/conv
             const clicksCTR = c.impressions > 0 ? ((c.clicks / c.impressions) * 100).toFixed(2) : "0.00";
 
             // Find latest changelog log for this campaign
@@ -1267,9 +1467,24 @@ export default function CampaignList({
                 <div>
                   {/* Status & icon Platform header */}
                   <div className="flex justify-between items-center mb-3">
-                    <span className="text-[10px] font-mono text-indigo-700 font-semibold bg-indigo-50 px-2.5 py-0.5 rounded">
-                      {c.platform}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded border-slate-300 text-indigo-600 checked:bg-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer accent-indigo-600"
+                        checked={selectedCampaignIds.includes(c.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedCampaignIds([...selectedCampaignIds, c.id]);
+                          } else {
+                            setSelectedCampaignIds(selectedCampaignIds.filter((id) => id !== c.id));
+                          }
+                        }}
+                      />
+                      <span className="text-[10px] font-mono text-indigo-700 font-semibold bg-indigo-50 px-2.5 py-0.5 rounded">
+                        {c.platform}
+                      </span>
+                    </div>
                     <span
                       className={`text-[9px] uppercase tracking-wide px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-1 ${
                         c.status === "active"
@@ -1677,7 +1892,7 @@ export default function CampaignList({
                     <input
                       type="text"
                       value={quickLogChanged}
-                      placeholder="e.g. Scaled daily spend budget from $2,500 to $3,200 to maximize high CPA conversion margins"
+                      placeholder="e.g. Scaled daily spend budget from ₹2,50,000 to ₹3,20,000 to maximize high CPA conversion margins"
                       onChange={(e) => setQuickLogChanged(e.target.value)}
                       className="w-full text-xs px-3 py-2 border border-slate-200 bg-white rounded-lg text-slate-700 focus:border-indigo-500 outline-hidden"
                     />
@@ -2813,6 +3028,210 @@ export default function CampaignList({
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg shadow-xs cursor-pointer"
                 >
                   Save Campaign Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Edit Modal */}
+      {showBulkEditModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in" style={{ zIndex: 9998 }}>
+          <div className="bg-white rounded-2xl max-w-2xl w-full border border-slate-100 shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto w-full">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold font-display text-slate-800">
+                  Bulk Edit Selected Campaigns
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Modifying <span className="text-indigo-600 font-extrabold">{selectedCampaignIds.length}</span> selected campaigns in bulk. Keep fields as "No Change" to skip updating them.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="p-1 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                onClick={() => setShowBulkEditModal(false)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleBulkEditSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Status */}
+                <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">1. Campaign Status</label>
+                  <select
+                    value={bulkStatus}
+                    onChange={(e) => setBulkStatus(e.target.value as any)}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600 bg-white"
+                  >
+                    <option value="keep">— No Change (Unchanged) —</option>
+                    <option value="active">Active</option>
+                    <option value="paused">Paused</option>
+                    <option value="completed">Completed</option>
+                    <option value="draft">Draft</option>
+                  </select>
+                </div>
+
+                {/* Marketing Network / Platform */}
+                <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">2. Marketing Network (Platform)</label>
+                  <select
+                    value={bulkPlatform}
+                    onChange={(e) => setBulkPlatform(e.target.value as any)}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600 bg-white"
+                  >
+                    <option value="keep">— No Change (Unchanged) —</option>
+                    {platformOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Adset */}
+                <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                  <label className="block text-xs font-bold text-slate-705 mb-1">3. Targeting Adset/Ad Group</label>
+                  <select
+                    value={bulkAdsetMode}
+                    onChange={(e) => setBulkAdsetMode(e.target.value as any)}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-650 bg-white mb-2"
+                  >
+                    <option value="keep">— No Change (Unchanged) —</option>
+                    <option value="set">Set to specified value...</option>
+                    <option value="clear">Clear this value from all selected</option>
+                  </select>
+                  {bulkAdsetMode === "set" && (
+                    <input
+                      type="text"
+                      placeholder="e.g. LAL_5%_RealEstate_Buyers"
+                      value={bulkAdset}
+                      onChange={(e) => setBulkAdset(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-705 bg-white animate-fade-in"
+                    />
+                  )}
+                </div>
+
+                {/* Creative Format */}
+                <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">4. Creative Format Type</label>
+                  <select
+                    value={bulkCreativeType}
+                    onChange={(e) => setBulkCreativeType(e.target.value as any)}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-605 bg-white"
+                  >
+                    <option value="keep">— No Change (Unchanged) —</option>
+                    <option value="static">Static Banner / Image Ad</option>
+                    <option value="video">Pre-roll Video / Reel / Motion Ad</option>
+                  </select>
+                </div>
+
+                {/* Campaign Manager */}
+                <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">5. Campaign Manager</label>
+                  <select
+                    value={bulkCampaignManagerMode}
+                    onChange={(e) => setBulkCampaignManagerMode(e.target.value as any)}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600 bg-white mb-2"
+                  >
+                    <option value="keep">— No Change (Unchanged) —</option>
+                    <option value="set">Set to specified value...</option>
+                    <option value="clear">Clear this value from all selected</option>
+                  </select>
+                  {bulkCampaignManagerMode === "set" && (
+                    <input
+                      type="text"
+                      placeholder="e.g. Rachel Green / Ad Ops Team"
+                      value={bulkCampaignManager}
+                      onChange={(e) => setBulkCampaignManager(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-705 bg-white animate-fade-in"
+                    />
+                  )}
+                </div>
+
+                {/* Budget */}
+                <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">6. Approved Budget (INR - ₹)</label>
+                  <select
+                    value={bulkBudgetMode}
+                    onChange={(e) => setBulkBudgetMode(e.target.value as any)}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600 bg-white mb-2"
+                  >
+                    <option value="keep">— No Change (Unchanged) —</option>
+                    <option value="set">Set to new specific amount...</option>
+                  </select>
+                  {bulkBudgetMode === "set" && (
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 50000"
+                      value={bulkBudget}
+                      onChange={(e) => setBulkBudget(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-705 bg-white animate-fade-in"
+                    />
+                  )}
+                </div>
+
+                {/* Target CPL */}
+                <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">7. Target CPL (INR - ₹)</label>
+                  <select
+                    value={bulkCplMode}
+                    onChange={(e) => setBulkCplMode(e.target.value as any)}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600 bg-white mb-2"
+                  >
+                    <option value="keep">— No Change (Unchanged) —</option>
+                    <option value="set">Set target CPL amount...</option>
+                    <option value="clear">Clear target CPL benchmark</option>
+                  </select>
+                  {bulkCplMode === "set" && (
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 350"
+                      value={bulkCpl}
+                      onChange={(e) => setBulkCpl(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="w-full px-3 py-1.5 border border-slate-205 rounded-lg text-slate-705 bg-white animate-fade-in"
+                    />
+                  )}
+                </div>
+
+                {/* Edit Reason */}
+                <div className="md:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200/80 mt-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <HelpCircle size={13} className="text-indigo-500" />
+                    <span>Reason for Amendment / Edit</span>
+                  </label>
+                  <p className="text-[10px] text-slate-500 mb-2">
+                    Please supply an operational explanation. This will be updated inside all affected campaign audit logs.
+                  </p>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Bulk adjusted network platforms and operational managers after Q2 realignment..."
+                    value={bulkEditReason}
+                    onChange={(e) => setBulkEditReason(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-705 resize-none font-sans"
+                  />
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkEditModal(false)}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg font-semibold hover:bg-slate-50 cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg shadow-xs cursor-pointer"
+                >
+                  Apply Bulk Changes
                 </button>
               </div>
             </form>

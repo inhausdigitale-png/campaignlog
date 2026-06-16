@@ -18,7 +18,7 @@ import {
 } from "recharts";
 import {
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Target,
   MousePointerClick,
   Eye,
@@ -628,7 +628,7 @@ export default function Dashboard({
                       let iconBg = "bg-indigo-50 border-indigo-100";
                       
                       if (category === "Budget") {
-                        categoryIcon = <DollarSign size={15} className="text-emerald-600" />;
+                        categoryIcon = <IndianRupee size={15} className="text-emerald-600" />;
                         iconBg = "bg-emerald-50 border-emerald-100";
                       } else if (category === "Creative") {
                         categoryIcon = <FileText size={15} className="text-blue-600" />;

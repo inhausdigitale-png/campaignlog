@@ -457,6 +457,11 @@ export default function App() {
     await loadAllDatabaseStates();
   };
 
+  const handleSavePortalReportsBulk = async (rows: PortalReportRow[]) => {
+    await dataService.savePortalReportsBulk(rows);
+    await loadAllDatabaseStates();
+  };
+
   const handleDeletePortalReport = async (id: string) => {
     await dataService.deletePortalReport(id);
     await loadAllDatabaseStates();
@@ -506,7 +511,7 @@ export default function App() {
   };
 
   const handleImportPortalReports = async (importedPortals: PortalReportRow[]) => {
-    await Promise.all(importedPortals.map((p) => dataService.savePortalReport(p)));
+    await dataService.savePortalReportsBulk(importedPortals);
     await loadAllDatabaseStates();
   };
 
@@ -994,6 +999,7 @@ export default function App() {
                   <PortalReportModule
                     portalReports={portalReports}
                     onSaveReport={handleSavePortalReport}
+                    onSaveReportsBulk={handleSavePortalReportsBulk}
                     onDeleteReport={handleDeletePortalReport}
                     onClearAllReports={handleClearAllPortalReports}
                     rolePermission={currentRolePermission}

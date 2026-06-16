@@ -40,6 +40,7 @@ import {
 interface PortalReportModuleProps {
   portalReports: PortalReportRow[];
   onSaveReport: (row: PortalReportRow) => Promise<void>;
+  onSaveReportsBulk?: (rows: PortalReportRow[]) => Promise<void>;
   onDeleteReport: (id: string) => Promise<void>;
   onClearAllReports?: () => Promise<void>;
   rolePermission?: UserRolePermission;
@@ -48,6 +49,7 @@ interface PortalReportModuleProps {
 export default function PortalReportModule({
   portalReports,
   onSaveReport,
+  onSaveReportsBulk,
   onDeleteReport,
   onClearAllReports,
   rolePermission = {
@@ -323,41 +325,101 @@ export default function PortalReportModule({
             if (dateIndex !== -1) break;
           }
           if (dateIndex === -1) {
-            dateIndex = 1; // logical fallback index
+            dateIndex = 0; // logical fallback index
           }
 
-          let hLeadsIdx = dateIndex + 1;
-          let hSvcIdx = dateIndex + 2;
-          let aLeadsIdx = dateIndex + 3;
-          let aSvcIdx = dateIndex + 4;
-          let mLeadsIdx = dateIndex + 5;
-          let mSvcIdx = dateIndex + 6;
-          let rLeadsIdx = dateIndex + 7;
-          let rSvcIdx = dateIndex + 8;
-
+          let projectIndex = -1;
           for (let rowIdx = 0; rowIdx < Math.min(jsonData.length, 3); rowIdx++) {
+            const hRow = jsonData[rowIdx];
+            if (!hRow) continue;
+            const idx = hRow.findIndex(val => {
+              const str = String(val || "").toLowerCase();
+              return str.includes("project") || str === "trace" || str === "project trace";
+            });
+            if (idx !== -1) {
+              projectIndex = idx;
+              break;
+            }
+          }
+          if (projectIndex === -1) {
+            projectIndex = 1; // logical fallback index
+          }
+
+          // Initialize with intelligent defaults for the 12-column template layout
+          let hLeadsIdx = 2; // "Housing Leads"
+          let hSvcIdx = 3;   // "Housing SVC"
+          let aLeadsIdx = 4; // "99 Acres Leads"
+          let aSvcIdx = 5;   // "99 Acres SVC"
+          let mLeadsIdx = 6; // "Magicbricks Leads"
+          let mSvcIdx = 7;   // "Magicbricks SVC"
+          let rLeadsIdx = 8; // "Roof & floor Leads"
+          let rSvcIdx = 9;   // "Roof & floor SVC"
+
+          // Map indexes precisely by headers to prevent layout collisions
+          for (let rowIdx = 0; rowIdx < Math.min(jsonData.length, 2); rowIdx++) {
             const hRow = jsonData[rowIdx];
             if (!hRow) continue;
             hRow.forEach((val, colIdx) => {
               const str = String(val || "").toLowerCase();
               if (str.includes("housing")) {
-                hLeadsIdx = colIdx;
-                hSvcIdx = colIdx + 1;
-              } else if (str.includes("99 acres") || str.includes("99acres")) {
-                aLeadsIdx = colIdx;
-                aSvcIdx = colIdx + 1;
-              } else if (str.includes("magicbricks") || str.includes("magic")) {
-                mLeadsIdx = colIdx;
-                mSvcIdx = colIdx + 1;
-              } else if (str.includes("roof") || str.includes("floor") || str.includes("roof&floor")) {
-                rLeadsIdx = colIdx;
-                rSvcIdx = colIdx + 1;
+                if (str.includes("svc") || str.includes("visit") || str.includes("conducted")) {
+                  hSvcIdx = colIdx;
+                } else if (str.includes("lead") || str.includes("gen") || str.includes("total")) {
+                  hLeadsIdx = colIdx;
+                }
+              } else if (str.includes("99") || str.includes("acres")) {
+                if (str.includes("svc") || str.includes("visit") || str.includes("conducted")) {
+                  aSvcIdx = colIdx;
+                } else if (str.includes("lead") || str.includes("gen") || str.includes("total")) {
+                  aLeadsIdx = colIdx;
+                }
+              } else if (str.includes("magic")) {
+                if (str.includes("svc") || str.includes("visit") || str.includes("conducted")) {
+                  mSvcIdx = colIdx;
+                } else if (str.includes("lead") || str.includes("gen") || str.includes("total")) {
+                  mLeadsIdx = colIdx;
+                }
+              } else if (str.includes("roof") || str.includes("floor") || str.includes("r&f") || str.includes("r & f")) {
+                if (str.includes("svc") || str.includes("visit") || str.includes("conducted")) {
+                  rSvcIdx = colIdx;
+                } else if (str.includes("lead") || str.includes("gen") || str.includes("total")) {
+                  rLeadsIdx = colIdx;
+                }
               }
             });
           }
 
+          const parseToISODate = (raw: string): string | null => {
+            if (!raw) return null;
+            if (/^\d+(\.\d+)?$/.test(raw)) {
+              const serial = parseFloat(raw);
+              const dateObj = new Date((serial - 25569) * 86400 * 1000);
+              if (!isNaN(dateObj.getTime())) {
+                return dateObj.toISOString().split("T")[0];
+              }
+            }
+            const parts = raw.split(/[-/.]/);
+            if (parts.length === 3) {
+              const p0 = parts[0].trim();
+              const p1 = parts[1].trim();
+              const p2 = parts[2].trim();
+              if (p0.length === 4) {
+                return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
+              } else if (p2.length === 4) {
+                return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
+              } else if (p2.length === 2) {
+                return `20${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
+              }
+            }
+            const d = new Date(raw);
+            if (!isNaN(d.getTime())) {
+              return d.toISOString().split("T")[0];
+            }
+            return null;
+          };
+
           const rowsToPreview: any[] = [];
-          for (let i = 2; i < jsonData.length; i++) {
+          for (let i = 1; i < jsonData.length; i++) {
             const row = jsonData[i];
             if (!row || row.length === 0) continue;
 
@@ -368,29 +430,19 @@ export default function PortalReportModule({
             if (
               rowDateRawLower.includes("total") || 
               rowDateRawLower.includes("week") || 
-              (rowDateRawLower.includes("may") && rowDateRawLower.includes("-")) ||
-              (rowDateRawLower.includes("june") && rowDateRawLower.includes("-"))
+              rowDateRawLower.includes("summary") ||
+              rowDateRawLower.includes("project") ||
+              rowDateRawLower.includes("date") ||
+              (rowDateRawLower.includes("may") && rowDateRawLower.includes("-") && rowDateRawLower.length > 10) ||
+              (rowDateRawLower.includes("june") && rowDateRawLower.includes("-") && rowDateRawLower.length > 10)
             ) {
               continue; // Skip calculated weekly/summary rows
             }
 
-            let rowDate = rowDateRaw;
-            if (/^\d+(\.\d+)?$/.test(rowDateRaw)) {
-              const serial = parseFloat(rowDateRaw);
-              const dateObj = new Date((serial - 25569) * 86450 * 1000);
-              if (!isNaN(dateObj.getTime())) {
-                rowDate = dateObj.toISOString().split("T")[0];
-              }
-            } else {
-              const parts = rowDateRaw.split(/[-/.]/);
-              if (parts.length === 3) {
-                if (parts[0].length === 4) {
-                  rowDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-                } else if (parts[2].length === 4) {
-                  rowDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                }
-              }
-            }
+            const rowDate = parseToISODate(rowDateRaw);
+            if (!rowDate) continue;
+
+            const rowProject = String(row[projectIndex] || "").trim() || "Skyline Residency";
 
             const portalChannels = [
               { name: "Housing", genIdx: hLeadsIdx, svcIdx: hSvcIdx },
@@ -405,7 +457,7 @@ export default function PortalReportModule({
 
               rowsToPreview.push({
                 date: rowDate,
-                project: "Skyline Residency", // fall back to standard project tracer
+                project: rowProject,
                 portal: chan.name,
                 generated,
                 svs: svc,
@@ -526,6 +578,7 @@ export default function PortalReportModule({
 
   const handleCommitPortalData = async () => {
     const activeEmail = auth?.currentUser?.email || "gouthamarun123@gmail.com";
+    const payloads: PortalReportRow[] = [];
     
     for (const item of parsedRows) {
       const existingRow = portalReports.find(
@@ -551,7 +604,15 @@ export default function PortalReportModule({
         editedBy: activeEmail,
       };
 
-      await onSaveReport(payload);
+      payloads.push(payload);
+    }
+
+    if (onSaveReportsBulk) {
+      await onSaveReportsBulk(payloads);
+    } else {
+      for (const payload of payloads) {
+        await onSaveReport(payload);
+      }
     }
 
     setUploadSuccessMessage(`Successfully processed and loaded ${parsedRows.length} portal report records!`);
@@ -566,12 +627,22 @@ export default function PortalReportModule({
   // Preloaded template downloader
   const downloadPortalTemplate = () => {
     const csvContent = "data:text/csv;charset=utf-8,"
-      + "Date,Project,Portal,Total Leads,Allocation,SVC,Booked,Edit Reason\n"
-      + "2026-06-01,Skyline Residency,Housing,5,5,2,0,Regular Log\n"
-      + "2026-06-01,Skyline Residency,99 Acres,6,6,1,0,Regular Log\n"
-      + "2026-06-01,Skyline Residency,Magicbricks,5,5,3,0,Regular Log\n"
-      + "2026-06-01,Skyline Residency,Roof&floor,0,0,0,0,Regular Log\n"
-      + "2026-06-02,Skyline Residency,Housing,1,1,2,0,Corrected report\n";
+      + "\"Date\",\"Project\",\"Housing Leads\",\"Housing SVC\",\"99 Acres Leads\",\"99 Acres SVC\",\"Magicbricks Leads\",\"Magicbricks SVC\",\"Roof & floor Leads\",\"Roof & floor SVC\",\"Total Leads\",\"Total SVC\"\n"
+      + "2026-06-01,\"Vivaana\",2,0,3,0,0,0,0,0,5,0\n"
+      + "2026-06-01,\"One world\",1,0,4,0,0,0,1,0,6,0\n"
+      + "2026-06-01,\"Regal arch\",4,0,1,0,0,0,0,0,5,0\n"
+      + "2026-06-01,\"New meadows\",3,0,1,0,0,0,0,0,4,0\n"
+      + "2026-06-02,\"One world\",0,0,0,0,0,1,1,0,1,1\n"
+      + "2026-06-02,\"Regal arch\",4,0,1,0,3,0,0,0,8,0\n"
+      + "2026-06-02,\"Vivaana\",2,0,2,0,0,0,0,0,4,0\n"
+      + "2026-06-03,\"Eco Villas\",3,0,0,0,1,0,0,0,4,0\n"
+      + "2026-06-03,\"Regal arch\",6,0,1,0,0,0,0,0,7,0\n"
+      + "2026-06-03,\"One world\",1,0,1,0,0,0,0,0,2,0\n"
+      + "2026-06-03,\"New meadows\",0,0,1,0,0,1,0,0,1,1\n"
+      + "2026-06-04,\"New meadows\",0,1,2,0,0,0,0,0,2,1\n"
+      + "2026-06-04,\"One world\",1,0,1,1,0,0,0,0,2,1\n"
+      + "2026-06-04,\"Regal arch\",4,0,2,1,1,0,0,0,7,1\n"
+      + "2026-06-04,\"Vivaana\",4,0,3,0,1,0,0,0,8,0\n";
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -1271,10 +1342,10 @@ export default function PortalReportModule({
               <div className="bg-amber-50/40 border border-amber-100 rounded-xl p-4 space-y-2 text-xs">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 flex items-center gap-1 font-mono">
                   <Info size={12} className="text-amber-600" />
-                  Required spreadsheet columns
+                  Horizontal portal template details
                 </span>
                 <p className="text-slate-600 leading-relaxed text-[11px]">
-                  The uploaded spreadsheet should contain headers matching: <strong className="text-slate-800 font-bold">Date</strong>, <strong className="text-slate-800 font-bold">Project</strong>, <strong className="text-slate-800 font-bold">Portal Name</strong>, and numeric metric values for <strong className="text-slate-850">Leads</strong> and <strong className="text-indigo-700">SVC/Site Visits</strong>.
+                  The spreadsheet matches your horizontal template columns precisely: <strong className="text-slate-800 font-bold">Date</strong>, <strong className="text-slate-800 font-bold">Project</strong>, and pairs of Leads/SVC for <strong className="text-slate-800">Housing</strong>, <strong className="text-slate-850">99 Acres</strong>, <strong className="text-slate-850">Magicbricks</strong>, and <strong className="text-slate-850">Roof & floor</strong>. It will parse and sync the metrics instantly!
                 </p>
                 <button
                   onClick={downloadPortalTemplate}
@@ -1801,18 +1872,14 @@ export default function PortalReportModule({
                     return (
                       <React.Fragment key={p}>
                         <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fff5f2]/80 font-mono text-[11px]">{metrics.leads}</td>
-                        <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fff8f6]/80 font-mono text-amber-700 text-[11px]">{metrics.allocation}</td>
-                        <td className="p-3 text-center border-r border-[#edd1c5] bg-[#fff8f6]/80 font-mono text-emerald-700 text-[11px]">{metrics.svc}</td>
-                        <td className="p-3 text-center border-r border-slate-150 bg-[#fffdfa]/80 font-mono text-indigo-700 text-[11px]">{metrics.booked}</td>
+                        <td className="p-3 text-center border-r border-slate-150 bg-[#fff8f6]/80 font-mono text-slate-500 text-[11px]">{metrics.svc}</td>
                       </React.Fragment>
                     );
                   })}
 
                   {/* Aggregated Totals summaries */}
                   <td className="p-3 text-center bg-violet-100/70 border-r border-[#edd1c5] font-mono font-extrabold text-[12px]">{totalOverallLeads}</td>
-                  <td className="p-3 text-center bg-violet-100/70 border-r border-[#edd1c5] font-mono font-extrabold text-[12px] text-amber-850">{totalOverallAllocation}</td>
-                  <td className="p-3 text-center bg-violet-100/70 border-r border-[#edd1c5] font-mono font-extrabold text-[12px] text-emerald-850">{totalOverallSvc}</td>
-                  <td className="p-3 text-center bg-violet-100/60 font-mono font-extrabold text-[12px] text-indigo-850">{totalOverallBooked}</td>
+                  <td className="p-3 text-center bg-violet-100/60 font-mono font-extrabold text-[12px] text-indigo-850">{totalOverallSvc}</td>
                 </tr>
               </tbody>
             </table>

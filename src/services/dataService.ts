@@ -441,15 +441,8 @@ const DEFAULT_RULE_CONFIGURATION: RuleConfiguration = {
 
 let activeUserEmail: string | null = null;
 
-// Helper to get partitioned key
+// Helper to get partitioned key (Partitioning disabled to allow collaborative team workspace views)
 function getPartitionedKey(key: string): string {
-  if (key === KEYS.INVITES) {
-    return key;
-  }
-  if (activeUserEmail) {
-    const safeEmail = activeUserEmail.toLowerCase().replace(/[^a-z0-9]/g, "_");
-    return `${key}_${safeEmail}`;
-  }
   return key;
 }
 
@@ -479,37 +472,22 @@ function saveLocal<T>(key: string, data: T[]) {
   }
 }
 
-// Global path/collection wrappers for Firebase to isolate collections by user email partitions
+// Global path/collection wrappers for Firebase (Shared unpartitioned paths for multi-user collaboration)
 function getCollectionRef(name: string) {
-  if (name === "invites") {
-    return collection(db, "invites");
-  }
-  if (activeUserEmail) {
-    const safeEmail = activeUserEmail.toLowerCase().replace(/[^a-z0-9]/g, "_");
-    return collection(db, "user_partitions", safeEmail, name);
-  }
   return collection(db, name);
 }
 
 function getDocRef(name: string, docId: string) {
-  if (name === "invites") {
-    return doc(db, "invites", docId);
-  }
-  if (activeUserEmail) {
-    const safeEmail = activeUserEmail.toLowerCase().replace(/[^a-z0-9]/g, "_");
-    return doc(db, "user_partitions", safeEmail, name, docId);
-  }
   return doc(db, name, docId);
 }
 
-const FIRESTORE_TIMEOUT_MS = 1500;
+const FIRESTORE_TIMEOUT_MS = 8000;
 
 async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
   let timer: any;
   const timeoutPromise = new Promise<T>((resolve) => {
     timer = setTimeout(() => {
-      console.warn(`[FIREBASE] Request timed out. disabling Firebase sync to keep the app responsive. Falling back to local cache.`);
-      disableFirebaseSync();
+      console.warn(`[FIREBASE] Request timed out after ${FIRESTORE_TIMEOUT_MS}ms. Falling back to local cache to keep the session highly responsive.`);
       resolve(fallback);
     }, FIRESTORE_TIMEOUT_MS);
   });
@@ -524,14 +502,13 @@ async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-const FIRESTORE_WRITE_TIMEOUT_MS = 1500;
+const FIRESTORE_WRITE_TIMEOUT_MS = 10000;
 
 async function withWriteTimeout(promise: Promise<any>, path: string): Promise<any> {
   let timer: any;
   const timeoutPromise = new Promise<any>((_, reject) => {
     timer = setTimeout(() => {
-      disableFirebaseSync();
-      reject(new Error(`[FIREBASE] Write request to ${path} timed out after ${FIRESTORE_WRITE_TIMEOUT_MS}ms. Disabling further Firebase sync.`));
+      reject(new Error(`[FIREBASE] Write request to ${path} timed out after ${FIRESTORE_WRITE_TIMEOUT_MS}ms.`));
     }, FIRESTORE_WRITE_TIMEOUT_MS);
   });
 
@@ -645,7 +622,7 @@ export const dataService = {
     // Calculate logs
     let logDescription = `Created standard campaign '${finalCampaign.name}' on platform '${finalCampaign.platform}'.`;
     if (!isNew) {
-      logDescription = `Updated campaign '${finalCampaign.name}' fields. Budget: $${finalCampaign.budget}, Status: '${finalCampaign.status}'.`;
+      logDescription = `Updated campaign '${finalCampaign.name}' fields. Budget: ₹${finalCampaign.budget}, Status: '${finalCampaign.status}'.`;
     }
 
     // 1. Local Cache (Always updated first for lightning-fast UI response)
@@ -654,10 +631,10 @@ export const dataService = {
     if (idx !== -1) {
       const prev = list[idx];
       const changes: string[] = [];
-      if (prev.budget !== finalCampaign.budget) changes.push(`Budget altered from $${prev.budget} to $${finalCampaign.budget}`);
+      if (prev.budget !== finalCampaign.budget) changes.push(`Budget altered from ₹${prev.budget} to ₹${finalCampaign.budget}`);
       if (prev.status !== finalCampaign.status) changes.push(`Status converted from '${prev.status}' to '${finalCampaign.status}'`);
       if (prev.name !== finalCampaign.name) changes.push(`Name retitled from '${prev.name}' to '${finalCampaign.name}'`);
-      if (prev.spend !== finalCampaign.spend) changes.push(`Spend changed from $${prev.spend} to $${finalCampaign.spend}`);
+      if (prev.spend !== finalCampaign.spend) changes.push(`Spend changed from ₹${prev.spend} to ₹${finalCampaign.spend}`);
       if (prev.conversions !== finalCampaign.conversions) changes.push(`Conversions adjusted from ${prev.conversions} to ${finalCampaign.conversions}`);
 
       logDescription = changes.length > 0
@@ -1238,6 +1215,55 @@ export const dataService = {
       }
     }
     return true;
+  },
+
+  async savePortalReportsBulk(rows: PortalReportRow[]): Promise<PortalReportRow[]> {
+    if (rows.length === 0) return [];
+
+    // 1. Local Cache - update all rows in a single batch synchronous operation
+    const list = loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS);
+
+    const finalRows = rows.map(row => {
+      const isNew = !row.id || row.id.length === 0 || row.id.startsWith("p-rep-temp-") || row.id.startsWith("temp-");
+      const activeId = isNew ? "p-rep-" + Math.random().toString(36).substring(2, 9) : row.id;
+      return {
+        ...row,
+        id: activeId,
+        createdAt: row.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    for (const finalRow of finalRows) {
+      const idx = list.findIndex(
+        (r) => r.id === finalRow.id || (r.date === finalRow.date && r.project === finalRow.project && r.portal === finalRow.portal)
+      );
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], ...finalRow };
+      } else {
+        list.unshift(finalRow);
+      }
+    }
+    saveLocal(KEYS.PORTAL_REPORTS, list);
+
+    // 2. Cloud Sync - run setDoc writes concurrently using Promise.all
+    if (isFirebaseEnabled) {
+      try {
+        await Promise.all(
+          finalRows.map(async (finalRow) => {
+            try {
+              await withWriteTimeout(setDoc(getDocRef("portal_reports", finalRow.id), finalRow), `portal_reports/${finalRow.id}`);
+            } catch (err) {
+              console.warn(`[FIREBASE] Bulk row sync failed for ${finalRow.id}:`, err);
+            }
+          })
+        );
+      } catch (err) {
+        console.error("[FIREBASE] savePortalReportsBulk Cloud sync failed:", err);
+      }
+    }
+
+    return finalRows;
   },
 
   // --- Target Budget Ledger ---
