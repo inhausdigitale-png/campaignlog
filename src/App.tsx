@@ -406,11 +406,13 @@ export default function App() {
   const handleDeleteCampaign = async (id: string, name: string) => {
     const operatorEmail = user?.email || "anonymous_sandbox@example.com";
     if (id.startsWith("perf-")) {
+      setCampaignPerformances(prev => prev.filter(c => c.id !== id));
       await dataService.deleteCampaignPerformance(id);
     } else {
+      setCampaigns(prev => prev.filter(c => c.id !== id));
       await dataService.deleteCampaign(id, name, operatorEmail);
     }
-    await loadAllDatabaseStates();
+    loadAllDatabaseStates(false);
   };
 
   // Action: Lead saving
@@ -519,8 +521,12 @@ export default function App() {
   };
 
   const handleClearAllCampaigns = async () => {
+    setCampaigns([]);
+    setCampaignPerformances([]);
+    setCreatives([]);
+    setAuditLogs([]);
     await dataService.clearAllCampaigns();
-    await loadAllDatabaseStates();
+    loadAllDatabaseStates(false);
   };
 
   // Action: Target Budget CRUD

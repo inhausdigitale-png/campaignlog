@@ -3262,7 +3262,11 @@ export default function CampaignList({
               </button>
               <button
                 type="button"
-                onClick={confirmDialog.onConfirm}
+                onClick={() => {
+                  const onConf = confirmDialog.onConfirm;
+                  setConfirmDialog(null);
+                  setTimeout(onConf, 10);
+                }}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow-xs cursor-pointer"
               >
                 Confirm Delete
