@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Campaign, CampaignPerformance, AIRecommendationReport, ChangeLogEntry } from "../types";
+import { Campaign, CampaignPerformance, AIRecommendationReport, ChangeLogEntry, PortalReportRow } from "../types";
 import { formatINR, formatIndianShort, formatIndianNumber } from "../utils/indiaHelpers";
 import {
   ResponsiveContainer,
@@ -40,9 +40,12 @@ import {
   Share2,
 } from "lucide-react";
 import { dataService } from "../services/dataService";
+import PortalDashboard from "./PortalDashboard";
+
 interface DashboardProps {
   campaigns: Campaign[];
   campaignPerformances?: CampaignPerformance[];
+  portalReports?: PortalReportRow[];
   onSavePerformance?: (p: CampaignPerformance) => Promise<void>;
   changeLogEntries?: ChangeLogEntry[];
 }
@@ -50,6 +53,7 @@ interface DashboardProps {
 export default function Dashboard({ 
   campaigns, 
   campaignPerformances = [], 
+  portalReports = [],
   onSavePerformance,
   changeLogEntries = []
 }: DashboardProps) {
@@ -57,6 +61,7 @@ export default function Dashboard({
   const [selectedProject, setSelectedProject] = useState<string>("All");
   const [startDateFilter, setStartDateFilter] = useState<string>("");
   const [endDateFilter, setEndDateFilter] = useState<string>("");
+  const [dashboardView, setDashboardView] = useState<"digital" | "portal">("digital");
 
   const [aiReport, setAiReport] = useState<AIRecommendationReport | null>(null);
 
@@ -199,8 +204,35 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6">
-      {/* Newly Updated Creatives Indicator Banner */}
-      {campaignPerformances && campaignPerformances.some(p => p.creativeNewUpdatedFlag) && (
+      <div className="flex bg-slate-100 p-1.5 rounded-xl w-max border border-slate-200">
+        <button
+          onClick={() => setDashboardView("digital")}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+            dashboardView === "digital" 
+              ? "bg-white text-indigo-700 shadow-sm" 
+              : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+          }`}
+        >
+          Digital Marketing
+        </button>
+        <button
+          onClick={() => setDashboardView("portal")}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+            dashboardView === "portal" 
+              ? "bg-white text-indigo-700 shadow-sm" 
+              : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+          }`}
+        >
+          Portals & Projects
+        </button>
+      </div>
+
+      {dashboardView === "portal" ? (
+        <PortalDashboard portalReports={portalReports} />
+      ) : (
+        <div className="space-y-6 animate-fade-in">
+          {/* Newly Updated Creatives Indicator Banner */}
+          {campaignPerformances && campaignPerformances.some(p => p.creativeNewUpdatedFlag) && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4.5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
           <div className="flex items-start gap-3">
             <div className="bg-indigo-100 p-2 text-indigo-700 rounded-lg shrink-0 mt-0.5 animate-pulse">
@@ -884,6 +916,8 @@ export default function Dashboard({
             )}
           </div>
         </>
+      )}
+      </div>
       )}
     </div>
   );

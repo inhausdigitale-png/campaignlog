@@ -34,8 +34,11 @@ import {
   Link,
   UploadCloud,
   AlertTriangle,
-  Settings
+  Settings,
+  LayoutDashboard,
+  TableProperties
 } from "lucide-react";
+import PortalDashboard from "./PortalDashboard";
 
 interface PortalReportModuleProps {
   portalReports: PortalReportRow[];
@@ -69,6 +72,7 @@ export default function PortalReportModule({
     canManageRules: true
   },
 }: PortalReportModuleProps) {
+
   // Modal controllers
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDate, setEditingDate] = useState<string | null>(null);
@@ -864,16 +868,21 @@ export default function PortalReportModule({
     return dateStr;
   };
 
+  // Filter reports
+  const filteredReports = portalReports.filter(r => {
+    const rowMonth = r.date.substring(0, 7);
+    if (rowMonth !== filterMonth) return false;
+    if (filterProject !== "all" && r.project !== filterProject) return false;
+    if (filterPortal !== "all" && r.portal !== filterPortal) return false; // Adding this to respect portal filter
+    return true;
+  });
+
   // Pivot calculations: Group daily portalReports by Date & Project, with dynamic portal initialization
   const pivotedData: { [key: string]: any } = {};
 
-  portalReports.forEach((r) => {
+  filteredReports.forEach((r) => {
     // Check if within selected Month
     const rowMonth = r.date.substring(0, 7); // "YYYY-MM"
-    if (rowMonth !== filterMonth) return;
-
-    // Check if matches project filter
-    if (filterProject !== "all" && r.project !== filterProject) return;
 
     const groupKey = `${r.date}__${r.project}`;
     if (!pivotedData[groupKey]) {

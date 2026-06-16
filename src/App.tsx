@@ -1013,6 +1013,7 @@ export default function App() {
                 <Dashboard 
                   campaigns={campaigns} 
                   campaignPerformances={campaignPerformances}
+                  portalReports={portalReports}
                   onSavePerformance={handleSaveCampaignPerformance}
                   changeLogEntries={changeLogEntries}
                 />
