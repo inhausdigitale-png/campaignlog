@@ -550,13 +550,7 @@ export const dataService = {
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Campaign));
 
           // Seed cloud DB once if empty
-          if (list.length === 0 && INITIAL_CAMPAIGNS.length > 0) {
-            console.log("[FIREBASE] Campaign collection empty. Seeding defaults...");
-            for (const camp of INITIAL_CAMPAIGNS) {
-              await setDoc(getDocRef("campaigns", camp.id), camp);
-            }
-            return INITIAL_CAMPAIGNS;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS));
@@ -715,13 +709,7 @@ export const dataService = {
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as AuditLog));
 
-          if (list.length === 0) {
-            console.log("[FIREBASE] Seed audit trail logs...");
-            for (const l of INITIAL_AUDITS) {
-              await setDoc(getDocRef("audit_logs", l.id), l);
-            }
-            return INITIAL_AUDITS;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<AuditLog>(KEYS.AUDIT_LOGS, INITIAL_AUDITS));
@@ -762,13 +750,7 @@ export const dataService = {
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Lead));
 
-          if (list.length === 0) {
-            console.log("[FIREBASE] Seed lead portal records...");
-            for (const l of INITIAL_LEADS) {
-              await setDoc(getDocRef("portal_leads", l.id), l);
-            }
-            return INITIAL_LEADS;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<Lead>(KEYS.PORTAL_LEADS, INITIAL_LEADS));
@@ -879,13 +861,7 @@ export const dataService = {
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CreativeAsset));
 
-          if (list.length === 0) {
-            console.log("[FIREBASE] Seed creative collection files...");
-            for (const c of INITIAL_CREATIVES) {
-              await setDoc(getDocRef("creative_performance", c.id), c);
-            }
-            return INITIAL_CREATIVES;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<CreativeAsset>(KEYS.CREATIVES, INITIAL_CREATIVES));
@@ -951,13 +927,7 @@ export const dataService = {
           const q = query(getCollectionRef("campaign_reports"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CampaignReport));
-          if (list.length === 0) {
-            console.log("[FIREBASE] Seed campaign reports...");
-            for (const rep of INITIAL_REPORTS) {
-              await setDoc(getDocRef("campaign_reports", rep.id), rep);
-            }
-            return INITIAL_REPORTS;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<CampaignReport>(KEYS.REPORTS, INITIAL_REPORTS));
@@ -1024,13 +994,7 @@ export const dataService = {
           const q = query(getCollectionRef("metric_comparisons"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as MetricComparison));
-          if (list.length === 0) {
-            console.log("[FIREBASE] Seed metric comparisons...");
-            for (const comp of INITIAL_COMPARISONS) {
-              await setDoc(getDocRef("metric_comparisons", comp.id), comp);
-            }
-            return INITIAL_COMPARISONS;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<MetricComparison>(KEYS.COMPARISONS, INITIAL_COMPARISONS));
@@ -1097,13 +1061,7 @@ export const dataService = {
           const q = query(getCollectionRef("change_log_entries"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ChangeLogEntry));
-          if (list.length === 0) {
-            console.log("[FIREBASE] Seed change log entries...");
-            for (const chg of INITIAL_CHANGE_LOG_ENTRIES) {
-              await setDoc(getDocRef("change_log_entries", chg.id), chg);
-            }
-            return INITIAL_CHANGE_LOG_ENTRIES;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<ChangeLogEntry>(KEYS.CHANGE_LOGS, INITIAL_CHANGE_LOG_ENTRIES));
@@ -1178,13 +1136,7 @@ export const dataService = {
           const q = query(getCollectionRef("portal_reports"), orderBy("date", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as PortalReportRow));
-          if (list.length === 0) {
-            console.log("[FIREBASE] Seeding initial portal reports...");
-            for (const r of INITIAL_PORTAL_REPORTS) {
-              await setDoc(getDocRef("portal_reports", r.id), r);
-            }
-            return INITIAL_PORTAL_REPORTS;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS));
@@ -1348,13 +1300,7 @@ export const dataService = {
           const q = query(getCollectionRef("target_budgets"), orderBy("month", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as TargetBudgetRow));
-          if (list.length === 0) {
-            console.log("[FIREBASE] Seeding initial target budgets...");
-            for (const t of INITIAL_TARGET_BUDGETS) {
-              await setDoc(getDocRef("target_budgets", t.id), t);
-            }
-            return INITIAL_TARGET_BUDGETS;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<TargetBudgetRow>(KEYS.TARGET_BUDGETS, INITIAL_TARGET_BUDGETS));
@@ -1508,13 +1454,7 @@ export const dataService = {
           const q = query(getCollectionRef("campaign_performances"), orderBy("createdAt", "desc"));
           const snapshot = await getDocs(q);
           const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CampaignPerformance));
-          if (list.length === 0) {
-            console.log("[FIREBASE] Seed campaign performances...");
-            for (const perf of INITIAL_PERF_TRACKERS) {
-              await setDoc(getDocRef("campaign_performances", perf.id), perf);
-            }
-            return INITIAL_PERF_TRACKERS;
-          }
+          
           return list;
         })();
         return await withTimeout(fetchPromise, loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS));
