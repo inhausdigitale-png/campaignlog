@@ -117,6 +117,36 @@ export default function App() {
         setLoading(true);
       }
       
+      if (isFirebaseEnabled && !localStorage.getItem("migration_firebase_v1_sync")) {
+        console.log("[MIGRATION] Syncing local offline data to Firebase for the first time...");
+        try {
+          const localCampaigns = JSON.parse(localStorage.getItem("marketing_copilot_campaigns") || "[]");
+          for (const c of localCampaigns) { await dataService.saveCampaign(c, user?.email || "migration@copilot.local"); }
+          
+          const localLeads = JSON.parse(localStorage.getItem("marketing_copilot_portal_leads") || "[]");
+          if (localLeads.length > 0) await dataService.saveLeadsBulk(localLeads);
+          
+          const localCreatives = JSON.parse(localStorage.getItem("marketing_copilot_creatives") || "[]");
+          for (const c of localCreatives) { await dataService.saveCreative(c); }
+          
+          const localReports = JSON.parse(localStorage.getItem("marketing_copilot_portal_reports") || "[]");
+          if (localReports.length > 0) await dataService.savePortalReportsBulk(localReports);
+          
+          const localBudgets = JSON.parse(localStorage.getItem("marketing_copilot_target_budgets") || "[]");
+          if (localBudgets.length > 0) await dataService.saveTargetBudgetsBulk(localBudgets);
+          
+          const localPerfs = JSON.parse(localStorage.getItem("marketing_copilot_perf_trackers") || "[]");
+          if (localPerfs.length > 0) await dataService.saveCampaignPerformancesBulk(localPerfs);
+          
+          const localChg = JSON.parse(localStorage.getItem("marketing_copilot_change_logs") || "[]");
+          for (const ch of localChg) { await dataService.saveChangeLogEntry(ch); }
+
+          localStorage.setItem("migration_firebase_v1_sync", "true");
+        } catch (err) {
+          console.error("[MIGRATION] Failed to migrate offline data:", err);
+        }
+      }
+
       const safeLoad = async <T,>(p: Promise<T>, fallback: T): Promise<T> => {
         try {
           const res = await p;
@@ -645,6 +675,20 @@ export default function App() {
   }, [creatives, campaignPerformances, campaigns]);
 
   if (!user) {
+    if (authLoading || loading) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <svg className="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-xs font-semibold text-slate-500">Checking authorization context...</p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <LoginPage
         onGoogleSignIn={handleGoogleSignIn}

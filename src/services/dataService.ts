@@ -1621,7 +1621,7 @@ export const dataService = {
     if (isFirebaseEnabled) {
       try {
         const fetchPromise = (async () => {
-          const q = query(getCollectionRef("invites"), orderBy("createdAt", "desc"));
+          const q = query(getCollectionRef("invites"));
           const snapshot = await getDocs(q);
           const results: Invite[] = [];
           snapshot.forEach((docRef) => {
@@ -1629,8 +1629,8 @@ export const dataService = {
           });
           return results;
         })();
-        const cloudList = await withTimeout(fetchPromise, []);
-        if (cloudList && cloudList.length > 0) {
+        const cloudList = await withTimeout(fetchPromise, null);
+        if (cloudList !== null) {
           list = cloudList;
         } else {
           list = loadLocal<Invite>(KEYS.INVITES, INITIAL_INVITES);
@@ -1690,7 +1690,8 @@ export const dataService = {
     // 2. Cloud Sync (Safe Timeout)
     if (isFirebaseEnabled) {
       try {
-        await withWriteTimeout(setDoc(getDocRef("invites", activeId), finalInvite), `invites/${activeId}`);
+        const cleanedData = cleanUndefinedForFirestore(finalInvite);
+        await withWriteTimeout(setDoc(getDocRef("invites", activeId), cleanedData), `invites/${activeId}`);
       } catch (err) {
         console.warn("[FIREBASE] saveInvite Firestore sync bypassed, using local cache fallback:", err);
       }
