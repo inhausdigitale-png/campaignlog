@@ -590,13 +590,15 @@ export const dataService = {
           "campaign_performances"
         ];
 
+        const promises = [];
         for (const colName of collectionsToPurge) {
           const q = query(getCollectionRef(colName));
           const snapshot = await getDocs(q);
           for (const docSnap of snapshot.docs) {
-            await deleteDoc(getDocRef(colName, docSnap.id));
+            promises.push(deleteDoc(getDocRef(colName, docSnap.id)));
           }
         }
+        await Promise.allSettled(promises);
       } catch (err) {
         console.error("[FIREBASE] clearAllCampaigns Firestore sync failed:", err);
       }
@@ -1183,9 +1185,11 @@ export const dataService = {
       try {
         const q = query(getCollectionRef("portal_reports"));
         const snapshot = await getDocs(q);
+        const promises = [];
         for (const docSnap of snapshot.docs) {
-          await deleteDoc(getDocRef("portal_reports", docSnap.id));
+          promises.push(deleteDoc(getDocRef("portal_reports", docSnap.id)));
         }
+        await Promise.allSettled(promises);
       } catch (err) {
         console.error("[FIREBASE] clearAllPortalReports Firestore sync failed:", err);
       }

@@ -516,8 +516,9 @@ export default function App() {
   };
 
   const handleClearAllPortalReports = async () => {
+    setPortalReports([]);
     await dataService.clearAllPortalReports();
-    await loadAllDatabaseStates();
+    loadAllDatabaseStates(false);
   };
 
   const handleClearAllCampaigns = async () => {
