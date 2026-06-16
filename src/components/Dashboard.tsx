@@ -37,8 +37,9 @@ import {
   FileText,
   CheckCircle2,
   Lock,
+  Share2,
 } from "lucide-react";
-
+import { dataService } from "../services/dataService";
 interface DashboardProps {
   campaigns: Campaign[];
   campaignPerformances?: CampaignPerformance[];
@@ -58,6 +59,16 @@ export default function Dashboard({
   const [endDateFilter, setEndDateFilter] = useState<string>("");
 
   const [aiReport, setAiReport] = useState<AIRecommendationReport | null>(null);
+
+  const handleShare = async () => {
+    const reportData = {
+        campaigns,
+        performances: campaignPerformances,
+        timestamp: new Date().toISOString()
+    };
+    const id = await dataService.saveSharedReport(reportData);
+    alert(`Report shared! Link: ${window.location.origin}/shared?shareId=${id}`);
+  };
 
   // Activity Feed States
   const [activitySearch, setActivitySearch] = useState<string>("");
@@ -262,17 +273,26 @@ export default function Dashboard({
             </p>
           </div>
           {(selectedPlatform !== "All" || selectedProject !== "All" || startDateFilter || endDateFilter) && (
-            <button
-              onClick={() => {
-                setSelectedPlatform("All");
-                setSelectedProject("All");
-                setStartDateFilter("");
-                setEndDateFilter("");
-              }}
-              className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-1 rounded transition-all cursor-pointer"
-            >
-              Reset Filters
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleShare}
+                className="text-[10px] font-bold text-white hover:bg-slate-800 bg-slate-700 px-3 py-1 rounded transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Share2 size={12} />
+                Share Snapshot
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedPlatform("All");
+                  setSelectedProject("All");
+                  setStartDateFilter("");
+                  setEndDateFilter("");
+                }}
+                className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-1 rounded transition-all cursor-pointer"
+              >
+                Reset Filters
+              </button>
+            </div>
           )}
         </div>
 

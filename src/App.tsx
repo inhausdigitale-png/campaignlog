@@ -110,10 +110,12 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
-   // Load database snapshots
-  const loadAllDatabaseStates = async () => {
+  // Load database snapshots
+  const loadAllDatabaseStates = async (showLoader: boolean = true) => {
     try {
-      setLoading(true);
+      if (showLoader) {
+        setLoading(true);
+      }
       
       const safeLoad = async <T,>(p: Promise<T>, fallback: T): Promise<T> => {
         try {
@@ -161,6 +163,8 @@ export default function App() {
 
   useEffect(() => {
     let authTimeout: any;
+    let autoRefreshInterval: any;
+
     if (!isFirebaseConfigured) {
       loadAllDatabaseStates();
     } else if (auth) {
@@ -212,12 +216,24 @@ export default function App() {
         }
         setAuthLoading(false);
         loadAllDatabaseStates();
+
+        if (isFirebaseEnabled) {
+          if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+          autoRefreshInterval = setInterval(() => {
+            loadAllDatabaseStates(false);
+          }, 15000);
+        }
       });
       
       return () => {
         if (authTimeout) clearTimeout(authTimeout);
+        if (autoRefreshInterval) clearInterval(autoRefreshInterval);
         unsubscribe();
       };
+    }
+    
+    return () => {
+      if (autoRefreshInterval) clearInterval(autoRefreshInterval);
     }
   }, []);
 
@@ -496,17 +512,17 @@ export default function App() {
 
   // Action: Bulk Google Sheet Imports
   const handleImportLeads = async (importedLeads: Lead[]) => {
-    await Promise.all(importedLeads.map((l) => dataService.saveLead(l)));
+    await dataService.saveLeadsBulk(importedLeads);
     await loadAllDatabaseStates();
   };
 
   const handleImportPerformance = async (importedPerf: CampaignPerformance[]) => {
-    await Promise.all(importedPerf.map((p) => dataService.saveCampaignPerformance(p)));
+    await dataService.saveCampaignPerformancesBulk(importedPerf);
     await loadAllDatabaseStates();
   };
 
   const handleImportTargets = async (importedTargets: TargetBudgetRow[]) => {
-    await Promise.all(importedTargets.map((t) => dataService.saveTargetBudget(t)));
+    await dataService.saveTargetBudgetsBulk(importedTargets);
     await loadAllDatabaseStates();
   };
 

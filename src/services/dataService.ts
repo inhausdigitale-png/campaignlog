@@ -9,6 +9,7 @@ import {
   doc,
   query,
   orderBy,
+  writeBatch,
 } from "firebase/firestore";
 
 function cleanUndefinedForFirestore(obj: any): any {
@@ -808,6 +809,50 @@ export const dataService = {
     return finalLead;
   },
 
+  async saveLeadsBulk(leads: Lead[]): Promise<Lead[]> {
+    if (leads.length === 0) return [];
+    
+    const list = loadLocal<Lead>(KEYS.PORTAL_LEADS, INITIAL_LEADS);
+    const finalLeads = leads.map(lead => {
+      const isNew = !lead.id || lead.id.length === 0 || lead.id.startsWith("temp-");
+      const activeId = isNew ? "lead-" + Math.random().toString(36).substring(2, 9) : lead.id;
+      return {
+        ...lead,
+        id: activeId,
+        createdAt: lead.createdAt || new Date().toISOString(),
+      };
+    });
+
+    for (const finalLead of finalLeads) {
+      const idx = list.findIndex((l) => l.id === finalLead.id);
+      if (idx !== -1) {
+        list[idx] = finalLead;
+      } else {
+        list.unshift(finalLead);
+      }
+    }
+    saveLocal(KEYS.PORTAL_LEADS, list);
+
+    if (isFirebaseEnabled) {
+      try {
+        const batchSize = 400;
+        for (let i = 0; i < finalLeads.length; i += batchSize) {
+          const chunk = finalLeads.slice(i, i + batchSize);
+          const batch = writeBatch(db);
+          chunk.forEach((finalLead) => {
+            const docRef = getDocRef("portal_leads", finalLead.id);
+            const cleanedData = cleanUndefinedForFirestore(finalLead);
+            batch.set(docRef, cleanedData);
+          });
+          await withWriteTimeout(batch.commit(), `portal_leads_batch_${i}`);
+        }
+      } catch (err) {
+        console.warn("[FIREBASE] saveLeadsBulk Cloud sync failed:", err);
+      }
+    }
+    return finalLeads;
+  },
+
   async deleteLead(id: string): Promise<boolean> {
     // 1. Local Cache
     const list = loadLocal<Lead>(KEYS.PORTAL_LEADS, INITIAL_LEADS);
@@ -1150,6 +1195,33 @@ export const dataService = {
     return loadLocal<PortalReportRow>(KEYS.PORTAL_REPORTS, INITIAL_PORTAL_REPORTS);
   },
 
+  async saveSharedReport(report: any): Promise<string> {
+    const activeId = "share-" + Math.random().toString(36).substring(2, 9);
+    const finalReport = {
+      ...report,
+      id: activeId,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (isFirebaseEnabled) {
+      await setDoc(getDocRef("shared_reports", activeId), finalReport);
+    }
+    return activeId;
+  },
+
+  async getSharedReport(id: string): Promise<any> {
+    if (isFirebaseEnabled) {
+      try {
+        const snap = await getDocs(query(getCollectionRef("shared_reports"))); // Simplified for this exercise
+        const doc = snap.docs.find(d => d.id === id);
+        return doc ? doc.data() : null;
+      } catch (err) {
+        console.error("Failed to fetch shared report:", err);
+      }
+    }
+    return null;
+  },
+
   async clearAllPortalReports(): Promise<boolean> {
     // 1. Local Cache
     saveLocal(KEYS.PORTAL_REPORTS, []);
@@ -1246,18 +1318,20 @@ export const dataService = {
     }
     saveLocal(KEYS.PORTAL_REPORTS, list);
 
-    // 2. Cloud Sync - run setDoc writes concurrently using Promise.all
+    // 2. Cloud Sync - run setDoc writes using batch
     if (isFirebaseEnabled) {
       try {
-        await Promise.all(
-          finalRows.map(async (finalRow) => {
-            try {
-              await withWriteTimeout(setDoc(getDocRef("portal_reports", finalRow.id), finalRow), `portal_reports/${finalRow.id}`);
-            } catch (err) {
-              console.warn(`[FIREBASE] Bulk row sync failed for ${finalRow.id}:`, err);
-            }
-          })
-        );
+        const batchSize = 400; // max 500 per batch
+        for (let i = 0; i < finalRows.length; i += batchSize) {
+          const chunk = finalRows.slice(i, i + batchSize);
+          const batch = writeBatch(db);
+          chunk.forEach((finalRow) => {
+            const docRef = getDocRef("portal_reports", finalRow.id);
+            const cleanedData = cleanUndefinedForFirestore(finalRow);
+            batch.set(docRef, cleanedData);
+          });
+          await withWriteTimeout(batch.commit(), `portal_reports_batch_${i}`);
+        }
       } catch (err) {
         console.error("[FIREBASE] savePortalReportsBulk Cloud sync failed:", err);
       }
@@ -1319,6 +1393,50 @@ export const dataService = {
       }
     }
     return finalRow;
+  },
+
+  async saveTargetBudgetsBulk(rows: TargetBudgetRow[]): Promise<TargetBudgetRow[]> {
+    if (rows.length === 0) return [];
+    
+    const list = loadLocal<TargetBudgetRow>(KEYS.TARGET_BUDGETS, INITIAL_TARGET_BUDGETS);
+    const finalRows = rows.map(row => {
+      const isNew = !row.id || row.id.length === 0 || row.id.startsWith("temp-");
+      const activeId = isNew ? "tar-" + Math.random().toString(36).substring(2, 9) : row.id;
+      return {
+        ...row,
+        id: activeId,
+        createdAt: row.createdAt || new Date().toISOString(),
+      };
+    });
+
+    for (const finalRow of finalRows) {
+      const idx = list.findIndex((t) => t.id === finalRow.id);
+      if (idx !== -1) {
+        list[idx] = finalRow;
+      } else {
+        list.unshift(finalRow);
+      }
+    }
+    saveLocal(KEYS.TARGET_BUDGETS, list);
+
+    if (isFirebaseEnabled) {
+      try {
+        const batchSize = 400;
+        for (let i = 0; i < finalRows.length; i += batchSize) {
+          const chunk = finalRows.slice(i, i + batchSize);
+          const batch = writeBatch(db);
+          chunk.forEach((finalRow) => {
+            const docRef = getDocRef("target_budgets", finalRow.id);
+            const cleanedData = cleanUndefinedForFirestore(finalRow);
+            batch.set(docRef, cleanedData);
+          });
+          await withWriteTimeout(batch.commit(), `target_budgets_batch_${i}`);
+        }
+      } catch (err) {
+        console.warn("[FIREBASE] saveTargetBudgetsBulk Cloud sync failed:", err);
+      }
+    }
+    return finalRows;
   },
 
   async deleteTargetBudget(id: string): Promise<boolean> {
@@ -1435,6 +1553,50 @@ export const dataService = {
       }
     }
     return finalPerf;
+  },
+
+  async saveCampaignPerformancesBulk(perfs: CampaignPerformance[]): Promise<CampaignPerformance[]> {
+    if (perfs.length === 0) return [];
+    
+    const list = loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS);
+    const finalPerfs = perfs.map(perf => {
+      const isNew = !perf.id || perf.id.length === 0 || perf.id.startsWith("temp-");
+      const activeId = isNew ? "perf-" + Math.random().toString(36).substring(2, 9) : perf.id;
+      return {
+        ...perf,
+        id: activeId,
+        createdAt: perf.createdAt || new Date().toISOString(),
+      };
+    });
+
+    for (const finalPerf of finalPerfs) {
+      const idx = list.findIndex((c) => c.id === finalPerf.id);
+      if (idx !== -1) {
+        list[idx] = finalPerf;
+      } else {
+        list.unshift(finalPerf);
+      }
+    }
+    saveLocal(KEYS.PERF_TRACKERS, list);
+
+    if (isFirebaseEnabled) {
+      try {
+        const batchSize = 400;
+        for (let i = 0; i < finalPerfs.length; i += batchSize) {
+          const chunk = finalPerfs.slice(i, i + batchSize);
+          const batch = writeBatch(db);
+          chunk.forEach((finalPerf) => {
+            const docRef = getDocRef("campaign_performances", finalPerf.id);
+            const cleanedData = cleanUndefinedForFirestore(finalPerf);
+            batch.set(docRef, cleanedData);
+          });
+          await withWriteTimeout(batch.commit(), `campaign_performances_batch_${i}`);
+        }
+      } catch (err) {
+        console.warn("[FIREBASE] saveCampaignPerformancesBulk Cloud sync failed:", err);
+      }
+    }
+    return finalPerfs;
   },
 
   async deleteCampaignPerformance(id: string): Promise<boolean> {
