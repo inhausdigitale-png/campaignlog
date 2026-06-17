@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { TargetBudgetRow, WeeklyMetric, UserRolePermission } from "../types";
 import { formatINR } from "../utils/indiaHelpers";
-import { Plus, Trash2, Calendar, Coins, TrendingUp, CheckSquare, Edit, Save, ArrowLeftRight, Percent } from "lucide-react";
+import { Plus, Trash2, Calendar, Coins, TrendingUp, CheckSquare, Edit, Save, ArrowLeftRight, Percent, Filter, Layers } from "lucide-react";
 
 interface TargetBudgetLedgerProps {
   targets: TargetBudgetRow[];
@@ -236,12 +236,65 @@ export default function TargetBudgetLedger({
     setEditWeekIdx(null);
   };
 
-  // Top list aggregations
-  const totalBudget = targets.reduce((sum, t) => sum + t.budget, 0);
-  const totalSpend = targets.reduce((sum, t) => sum + t.spend, 0);
-  const totalLeadsTargeted = targets.reduce((sum, t) => sum + t.totalLeadTarget, 0);
-  const totalLeadsAchieved = targets.reduce((sum, t) => sum + t.totalLeadAchieved, 0);
-  const totalBookings = targets.reduce((sum, t) => sum + t.booking, 0);
+  // Filters state
+  const [filterProject, setFilterProject] = useState("all");
+  const [filterMedium, setFilterMedium] = useState("all");
+  const [filterMonth, setFilterMonth] = useState("all");
+  
+  // Grouping state: "all" (Default List), "project" (Project-wise Grouping), "medium" (Medium-wise Grouping)
+  const [viewGrouping, setViewGrouping] = useState<"all" | "project" | "medium">("all");
+
+  // Get list of unique options for select fields
+  const uniqueProjectsList = useMemo(() => {
+    return Array.from(new Set(targets.map(t => t.project).filter(Boolean))).sort();
+  }, [targets]);
+
+  const uniqueMediumsList = useMemo(() => {
+    return Array.from(new Set(targets.map(t => t.medium).filter(Boolean))).sort();
+  }, [targets]);
+
+  const uniqueMonthsList = useMemo(() => {
+    return Array.from(new Set(targets.map(t => t.month).filter(Boolean))).sort().reverse();
+  }, [targets]);
+
+  // Apply filters
+  const filteredTargets = useMemo(() => {
+    return targets.filter(t => {
+      if (filterProject !== "all" && t.project !== filterProject) return false;
+      if (filterMedium !== "all" && t.medium !== filterMedium) return false;
+      if (filterMonth !== "all" && t.month !== filterMonth) return false;
+      return true;
+    });
+  }, [targets, filterProject, filterMedium, filterMonth]);
+
+  // Group by Project Name
+  const projectGroupsObj = useMemo(() => {
+    const groups: { [key: string]: TargetBudgetRow[] } = {};
+    filteredTargets.forEach(t => {
+      const proj = t.project || "Unallocated / Other Projects";
+      if (!groups[proj]) groups[proj] = [];
+      groups[proj].push(t);
+    });
+    return groups;
+  }, [filteredTargets]);
+
+  // Group by Medium Name
+  const mediumGroupsObj = useMemo(() => {
+    const groups: { [key: string]: TargetBudgetRow[] } = {};
+    filteredTargets.forEach(t => {
+      const med = t.medium || "Unallocated / Other Mediums";
+      if (!groups[med]) groups[med] = [];
+      groups[med].push(t);
+    });
+    return groups;
+  }, [filteredTargets]);
+
+  // Top list aggregations (based on filtered selection so counters respond dynamically)
+  const totalBudget = filteredTargets.reduce((sum, t) => sum + t.budget, 0);
+  const totalSpend = filteredTargets.reduce((sum, t) => sum + t.spend, 0);
+  const totalLeadsTargeted = filteredTargets.reduce((sum, t) => sum + t.totalLeadTarget, 0);
+  const totalLeadsAchieved = filteredTargets.reduce((sum, t) => sum + t.totalLeadAchieved, 0);
+  const totalBookings = filteredTargets.reduce((sum, t) => sum + t.booking, 0);
 
   return (
     <div className="space-y-6" id="target-budget-ledger-panel">
@@ -351,6 +404,88 @@ export default function TargetBudgetLedger({
             </div>
           </div>
 
+          {/* Grouping Selectors & Filters */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-extrabold text-[10px] uppercase text-slate-400 font-display mr-1">Group View:</span>
+              <button
+                type="button"
+                onClick={() => setViewGrouping("all")}
+                className={`px-2.5 py-1.5 rounded-lg border font-bold transition-all ${
+                  viewGrouping === "all"
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                Flat List ({filteredTargets.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewGrouping("project")}
+                className={`px-2.5 py-1.5 rounded-lg border font-bold transition-all ${
+                  viewGrouping === "project"
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                Project Wise ({Object.keys(projectGroupsObj).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewGrouping("medium")}
+                className={`px-2.5 py-1.5 rounded-lg border font-bold transition-all ${
+                  viewGrouping === "medium"
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                Medium Wise ({Object.keys(mediumGroupsObj).length})
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-extrabold text-[10px] uppercase text-slate-400 font-display flex items-center gap-1">
+                <Filter size={11} /> Filters:
+              </span>
+              
+              {/* Project Filter */}
+              <select
+                value={filterProject}
+                onChange={(e) => setFilterProject(e.target.value)}
+                className="p-1 px-1.5 border border-slate-200 bg-white rounded-md text-slate-700 font-medium outline-hidden"
+              >
+                <option value="all">All Projects</option>
+                {uniqueProjectsList.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+
+              {/* Medium Filter */}
+              <select
+                value={filterMedium}
+                onChange={(e) => setFilterMedium(e.target.value)}
+                className="p-1 px-1.5 border border-slate-200 bg-white rounded-md text-slate-700 font-medium outline-hidden"
+              >
+                <option value="all">All Mediums</option>
+                {uniqueMediumsList.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+
+              {/* Month Filter */}
+              <select
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+                className="p-1 px-1.5 border border-slate-200 bg-white rounded-md text-slate-700 font-medium outline-hidden"
+              >
+                <option value="all">All Months</option>
+                {uniqueMonthsList.map(mo => (
+                  <option key={mo} value={mo}>{mo}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {showBulkImport && (
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3.5 animate-fade-in text-xs col-span-full">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -426,8 +561,12 @@ export default function TargetBudgetLedger({
                     onChange={(e) => setProject(e.target.value)}
                     placeholder="Skyline Residency"
                     required
+                    list="existing-projects"
                     className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 outline-hidden"
                   />
+                  <datalist id="existing-projects">
+                    {uniqueProjectsList.map(proj => <option key={proj} value={proj} />)}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-slate-500 mb-1">Channel / Medium</label>
@@ -437,8 +576,12 @@ export default function TargetBudgetLedger({
                     onChange={(e) => setMedium(e.target.value)}
                     placeholder="Digital - Meta Ads"
                     required
+                    list="existing-mediums"
                     className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 outline-hidden"
                   />
+                  <datalist id="existing-mediums">
+                    {uniqueMediumsList.map(med => <option key={med} value={med} />)}
+                  </datalist>
                 </div>
               </div>
 
@@ -508,106 +651,318 @@ export default function TargetBudgetLedger({
           )}
 
           {/* Master rows lists */}
-          <div className="space-y-3" id="budget-targets-sheets-list">
-            {targets.length === 0 ? (
+          <div className="space-y-4" id="budget-targets-sheets-list">
+            {filteredTargets.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-450 text-xs font-semibold">
-                No monthly targeting models initialized yet.
+                No matching target models found for selected filters. (Try resetting month, project, or medium)
+              </div>
+            ) : viewGrouping === "all" ? (
+              // 1. Flat list of filtered targets
+              <div className="space-y-3">
+                {filteredTargets.map((t) => {
+                  const isSelected = selectedTarget?.id === t.id;
+                  const spendPct = t.budget > 0 ? Math.round((t.spend / t.budget) * 100) : 0;
+                  const leadPct = t.totalLeadTarget > 0 ? Math.round((t.totalLeadAchieved / t.totalLeadTarget) * 105) / 105 : 0;
+                  const leadPctDisplay = t.totalLeadTarget > 0 ? Math.round((t.totalLeadAchieved / t.totalLeadTarget) * 100) : 0;
+
+                  return (
+                    <div
+                      key={t.id}
+                      className={`bg-white border p-4.5 rounded-xl shadow-xs transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-slate-350 cursor-pointer ${
+                        isSelected ? "ring-2 ring-indigo-600 border-indigo-200" : "border-slate-200"
+                      }`}
+                      onClick={() => {
+                        setSelectedTarget(t);
+                        setEditWeekIdx(null);
+                      }}
+                      id={`target-row-card-${t.id}`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="p-1 text-[10px] font-bold bg-slate-100 text-slate-655 border border-slate-205 rounded font-mono">
+                            {t.month}
+                          </span>
+                          <span className="text-xs font-bold text-slate-800">{t.project}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                          <ArrowLeftRight size={10} className="text-slate-400" /> {t.medium}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-6 w-full md:w-auto">
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                            <span>Budget Spent ({spendPct}%)</span>
+                            <span className="font-mono text-slate-705">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
+                          </div>
+                          <div className="w-40 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${spendPct > 100 ? "bg-rose-500" : "bg-indigo-600"}`}
+                              style={{ width: `${Math.min(spendPct, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                            <span>Target Leads ({leadPctDisplay}%)</span>
+                            <span className="font-mono text-slate-750">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
+                          </div>
+                          <div className="w-40 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${leadPctDisplay >= 100 ? "bg-emerald-500" : "bg-amber-500"}`}
+                              style={{ width: `${Math.min(leadPctDisplay, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="hidden md:flex flex-col items-center justify-center pr-2">
+                          {rolePermission.canDeleteTargets ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteTarget(t.id);
+                                if (selectedTarget?.id === t.id) {
+                                  setSelectedTarget(null);
+                                }
+                              }}
+                              className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
+                              title="Erase targeted ledger row"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          ) : (
+                            <button
+                              disabled
+                              className="p-1 text-slate-200 cursor-not-allowed"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : viewGrouping === "project" ? (
+              // 2. Project Wise Grouping View
+              <div className="space-y-6">
+                {(Object.entries(projectGroupsObj) as [string, TargetBudgetRow[]][]).map(([projectName, groupRows]) => {
+                  const projBudget = groupRows.reduce((s, r) => s + r.budget, 0);
+                  const projSpend = groupRows.reduce((s, r) => s + r.spend, 0);
+                  const projLeadsTarget = groupRows.reduce((s, r) => s + r.totalLeadTarget, 0);
+                  const projLeadsAchieved = groupRows.reduce((s, r) => s + r.totalLeadAchieved, 0);
+
+                  const spendPct = projBudget > 0 ? Math.round((projSpend / projBudget) * 100) : 0;
+                  const leadPct = projLeadsTarget > 0 ? Math.round((projLeadsAchieved / projLeadsTarget) * 100) : 0;
+
+                  return (
+                    <div key={projectName} className="bg-slate-50/50 border border-slate-200 rounded-xl p-4 shadow-3xs space-y-3">
+                      {/* Project Consolidated Summary Head */}
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-3 border-b border-slate-200">
+                        <div>
+                          <span className="text-[9px] font-extrabold uppercase text-indigo-600 block tracking-wider font-display">PROJECT</span>
+                          <h3 className="text-xs font-extrabold text-slate-800">{projectName}</h3>
+                          <span className="text-[10px] text-slate-500 font-semibold font-mono">{groupRows.length} Channel Medium Target(s)</span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-xs font-semibold">
+                          <div>
+                            <span className="text-[9px] text-slate-450 block uppercase">Project Budget Util</span>
+                            <span className="font-mono text-slate-700">{formatINR(projSpend)} / {formatINR(projBudget)} ({spendPct}%)</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-450 block uppercase">Project Leads Goal</span>
+                            <span className="font-mono text-slate-700">{projLeadsAchieved} / {projLeadsTarget} ({leadPct}%)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Channels under this project */}
+                      <div className="space-y-2">
+                        {groupRows.map((t) => {
+                          const isSelected = selectedTarget?.id === t.id;
+                          const tSpendPct = t.budget > 0 ? Math.round((t.spend / t.budget) * 100) : 0;
+                          const tLeadPct = t.totalLeadTarget > 0 ? Math.round((t.totalLeadAchieved / t.totalLeadTarget) * 100) : 0;
+
+                          return (
+                            <div
+                              key={t.id}
+                              className={`bg-white border p-3 rounded-lg shadow-2xs transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-3 hover:border-slate-350 cursor-pointer ${
+                                isSelected ? "ring-2 ring-indigo-600 border-indigo-205 bg-indigo-50/10" : "border-slate-150"
+                              }`}
+                              onClick={() => {
+                                setSelectedTarget(t);
+                                setEditWeekIdx(null);
+                              }}
+                            >
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="p-0.5 px-1 text-[9px] font-bold bg-slate-100 text-slate-655 border border-slate-205 rounded font-mono">
+                                    {t.month}
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-805">{t.medium}</span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full md:w-auto text-[11px]">
+                                <div className="space-y-0.5">
+                                  <div className="flex justify-between text-[9px] font-semibold text-slate-400">
+                                    <span>Spend ({tSpendPct}%)</span>
+                                  </div>
+                                  <span className="font-mono text-slate-700 block">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
+                                </div>
+
+                                <div className="space-y-0.5">
+                                  <div className="flex justify-between text-[9px] font-semibold text-slate-400">
+                                    <span>Leads ({tLeadPct}%)</span>
+                                  </div>
+                                  <span className="font-mono text-slate-705 block">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
+                                </div>
+
+                                <div className="hidden md:flex flex-col items-center justify-center pr-1">
+                                  {rolePermission.canDeleteTargets ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onDeleteTarget(t.id);
+                                        if (selectedTarget?.id === t.id) {
+                                          setSelectedTarget(null);
+                                        }
+                                      }}
+                                      className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
+                                      title="Erase targeted ledger row"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      disabled
+                                      className="p-1 text-slate-200 cursor-not-allowed"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              targets.map((t) => {
-                const isSelected = selectedTarget?.id === t.id;
-                const spendPct = t.budget > 0 ? Math.round((t.spend / t.budget) * 100) : 0;
-                const leadPct = t.totalLeadTarget > 0 ? Math.round((t.totalLeadAchieved / t.totalLeadTarget) * 100) : 0;
+              // 3. Medium Wise Grouping View
+              <div className="space-y-6">
+                {(Object.entries(mediumGroupsObj) as [string, TargetBudgetRow[]][]).map(([mediumName, groupRows]) => {
+                  const medBudget = groupRows.reduce((s, r) => s + r.budget, 0);
+                  const medSpend = groupRows.reduce((s, r) => s + r.spend, 0);
+                  const medLeadsTarget = groupRows.reduce((s, r) => s + r.totalLeadTarget, 0);
+                  const medLeadsAchieved = groupRows.reduce((s, r) => s + r.totalLeadAchieved, 0);
 
-                return (
-                  <div
-                    key={t.id}
-                    className={`bg-white border p-4.5 rounded-xl shadow-xs transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-slate-350 cursor-pointer ${
-                      isSelected ? "ring-2 ring-indigo-600 border-indigo-200" : "border-slate-200"
-                    }`}
-                    onClick={() => {
-                      setSelectedTarget(t);
-                      setEditWeekIdx(null); // clear sub-state
-                    }}
-                    id={`target-row-card-${t.id}`}
-                  >
-                    {/* Channel Description */}
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="p-1 text-[10px] font-bold bg-slate-100 text-slate-650 border border-slate-200 rounded font-mono">
-                          {t.month}
-                        </span>
-                        <span className="text-xs font-bold text-slate-800">{t.project}</span>
+                  const spendPct = medBudget > 0 ? Math.round((medSpend / medBudget) * 100) : 0;
+                  const leadPct = medLeadsTarget > 0 ? Math.round((medLeadsAchieved / medLeadsTarget) * 100) : 0;
+
+                  return (
+                    <div key={mediumName} className="bg-slate-50/50 border border-slate-200 rounded-xl p-4 shadow-3xs space-y-3">
+                      {/* Medium Consolidated Summary Head */}
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-3 border-b border-slate-200">
+                        <div>
+                          <span className="text-[9px] font-extrabold uppercase text-indigo-600 block tracking-wider font-display">MEDIUM / CHANNEL</span>
+                          <h3 className="text-xs font-extrabold text-slate-800">{mediumName}</h3>
+                          <span className="text-[10px] text-slate-500 font-semibold font-mono">{groupRows.length} Project Target(s)</span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-xs font-semibold">
+                          <div>
+                            <span className="text-[9px] text-slate-455 block uppercase font-display">Channel Budget Util</span>
+                            <span className="font-mono text-slate-700">{formatINR(medSpend)} / {formatINR(medBudget)} ({spendPct}%)</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-455 block uppercase font-display">Channel Leads Goal</span>
+                            <span className="font-mono text-slate-700">{medLeadsAchieved} / {medLeadsTarget} ({leadPct}%)</span>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
-                        <ArrowLeftRight size={10} className="text-slate-400" /> {t.medium}
-                      </p>
+
+                      {/* Projects under this medium */}
+                      <div className="space-y-2">
+                        {groupRows.map((t) => {
+                          const isSelected = selectedTarget?.id === t.id;
+                          const tSpendPct = t.budget > 0 ? Math.round((t.spend / t.budget) * 100) : 0;
+                          const tLeadPct = t.totalLeadTarget > 0 ? Math.round((t.totalLeadAchieved / t.totalLeadTarget) * 100) : 0;
+
+                          return (
+                            <div
+                              key={t.id}
+                              className={`bg-white border p-3 rounded-lg shadow-2xs transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-3 hover:border-slate-350 cursor-pointer ${
+                                isSelected ? "ring-2 ring-indigo-600 border-indigo-205 bg-indigo-50/10" : "border-slate-150"
+                              }`}
+                              onClick={() => {
+                                setSelectedTarget(t);
+                                setEditWeekIdx(null);
+                              }}
+                            >
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="p-0.5 px-1 text-[9px] font-bold bg-slate-100 text-slate-655 border border-slate-205 rounded font-mono">
+                                    {t.month}
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-850">{t.project}</span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full md:w-auto text-[11px]">
+                                <div className="space-y-0.5">
+                                  <div className="flex justify-between text-[9px] font-semibold text-slate-400">
+                                    <span>Spend ({tSpendPct}%)</span>
+                                  </div>
+                                  <span className="font-mono text-slate-700 block">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
+                                </div>
+
+                                <div className="space-y-0.5">
+                                  <div className="flex justify-between text-[9px] font-semibold text-slate-400">
+                                    <span>Leads ({tLeadPct}%)</span>
+                                  </div>
+                                  <span className="font-mono text-slate-705 block">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
+                                </div>
+
+                                <div className="hidden md:flex flex-col items-center justify-center pr-1">
+                                  {rolePermission.canDeleteTargets ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onDeleteTarget(t.id);
+                                        if (selectedTarget?.id === t.id) {
+                                          setSelectedTarget(null);
+                                        }
+                                      }}
+                                      className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
+                                      title="Erase targeted ledger row"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      disabled
+                                      className="p-1 text-slate-200 cursor-not-allowed"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-
-                    {/* Progress visual metrics */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-6 w-full md:w-auto">
-                      {/* Budget bar */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                          <span>Budget Spent ({spendPct}%)</span>
-                          <span className="font-mono text-slate-700">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
-                        </div>
-                        <div className="w-40 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${spendPct > 100 ? "bg-rose-500" : "bg-indigo-600"}`}
-                            style={{ width: `${Math.min(spendPct, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Leads bar */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                          <span>Target Leads ({leadPct}%)</span>
-                          <span className="font-mono text-slate-700">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
-                        </div>
-                        <div className="w-40 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${leadPct >= 100 ? "bg-emerald-500" : "bg-amber-500"}`}
-                            style={{ width: `${Math.min(leadPct, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Details button column */}
-                      <div className="hidden md:flex flex-col items-center justify-center pr-2">
-                        {rolePermission.canDeleteTargets ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteTarget(t.id);
-                              if (selectedTarget?.id === t.id) {
-                                setSelectedTarget(null);
-                              }
-                            }}
-                            className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
-                            title="Erase targeted ledger row"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        ) : (
-                          <button
-                            disabled
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              alert("Permission Denied: Deletions of SLA Targets is locked under your policy.");
-                            }}
-                            className="p-1 text-slate-200 cursor-not-allowed"
-                            title="Deletion Locked (Check simulated role)"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
