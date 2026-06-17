@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { PortalReportRow, UserRolePermission } from "../types";
 import { auth } from "../firebase";
 import * as XLSX from "xlsx";
@@ -85,6 +85,12 @@ export default function PortalReportModule({
   const [fileName, setFileName] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
+  const [uploadStats, setUploadStats] = useState<{
+    totalProcessed: number;
+    successCount: number;
+    failedCount: number;
+    failedReasons: { rowNumber: number; reason: string }[];
+  } | null>(null);
 
   // Dynamic list of active projects managed by the user
   const [projectsList, setProjectsList] = useState<string[]>(() => {
@@ -95,7 +101,7 @@ export default function PortalReportModule({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (e) {}
     }
-    return ["Skyline Residency", "Solar Expansion", "Eco Villas"];
+    return ["Skyline Residency", "Solar Expansion", "Eco Villas", "Vivaana", "One world", "Regal arch", "New meadows"];
   });
 
   // Dynamic list of active portals managed by the user
@@ -266,10 +272,17 @@ export default function PortalReportModule({
   // Excel Spreadsheet Mapper Helper
   const findHeaderIndex = (headers: string[], possibleNames: string[]) => {
     return headers.findIndex((h) => {
-      const norm = h.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      const lowerH = h.trim().toLowerCase();
       return possibleNames.some((pName) => {
-        const normP = pName.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return norm === normP || norm.includes(normP) || normP.includes(norm);
+        const lowerP = pName.toLowerCase();
+        if (lowerH === lowerP) return true;
+        // Use word boundaries to prevent 'update' matching 'date'
+        try {
+           const regex = new RegExp(`\\b${lowerP}\\b`, 'i');
+           return regex.test(lowerH);
+        } catch {
+           return lowerH.includes(lowerP);
+        }
       });
     });
   };
@@ -277,6 +290,7 @@ export default function PortalReportModule({
   const handleFileImport = (file: File) => {
     setUploadError(null);
     setUploadSuccessMessage(null);
+    setUploadStats(null);
     setFileName(file.name);
 
     const isCsv = file.name.endsWith(".csv") || file.type.includes("csv");
@@ -296,280 +310,527 @@ export default function PortalReportModule({
           return;
         }
 
-        const workbook = XLSX.read(bstr, { type: "binary" });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+        const workbook = XLSX.read(bstr, { type: "binary", cellDates: true });
 
-        if (jsonData.length < 2) {
-          setUploadError("The file does not contain enough data (missing headers or rows).");
-          return;
-        }
+        const safeParseInt = (val: any): number => {
+          if (val === undefined || val === null || val === "") return 0;
+          if (typeof val === "number") return Math.round(val);
+          const cleanStr = String(val).replace(/,/g, "").trim();
+          const parsed = parseInt(cleanStr, 10);
+          return isNaN(parsed) ? 0 : parsed;
+        };
 
-        const headers = jsonData[0].map((h: any) => String(h || "").trim());
-
-        // Support for Horizontal Layout (multiple portals represented as columns side-by-side)
-        const isHorizontalLayout = headers.some(h => {
-          const l = h.toLowerCase();
-          return l.includes("housing") || l.includes("99 acres") || l.includes("magicbricks") || l.includes("roof");
-        }) || (jsonData[1] && jsonData[1].some((h: any) => {
-          const l = String(h || "").toLowerCase();
-          return l.includes("housing") || l.includes("99 acres") || l.includes("magicbricks") || l.includes("roof");
-        }));
-
-        if (isHorizontalLayout) {
-          let dateIndex = -1;
-          for (let rowIdx = 0; rowIdx < Math.min(jsonData.length, 3); rowIdx++) {
-            const hRow = jsonData[rowIdx];
-            if (!hRow) continue;
-            dateIndex = hRow.findIndex(val => {
-              const str = String(val || "").toLowerCase();
-              return str.includes("date") || str === "day";
-            });
-            if (dateIndex !== -1) break;
-          }
-          if (dateIndex === -1) {
-            dateIndex = 0; // logical fallback index
+        const parseToISODate = (raw: any): string | null => {
+          if (!raw) return null;
+          
+          if (raw instanceof Date) {
+             const yy = raw.getFullYear();
+             const mm = String(raw.getMonth() + 1).padStart(2, '0');
+             const dd = String(raw.getDate()).padStart(2, '0');
+             return `${yy}-${mm}-${dd}`;
           }
 
-          let projectIndex = -1;
-          for (let rowIdx = 0; rowIdx < Math.min(jsonData.length, 3); rowIdx++) {
-            const hRow = jsonData[rowIdx];
-            if (!hRow) continue;
-            const idx = hRow.findIndex(val => {
-              const str = String(val || "").toLowerCase();
-              return str.includes("project") || str === "trace" || str === "project trace";
-            });
-            if (idx !== -1) {
-              projectIndex = idx;
-              break;
+          const rawStr = String(raw).trim();
+          if (!rawStr) return null;
+          
+          // Excel decimal parsing
+          if (/^\d+(\.\d+)?$/.test(rawStr)) {
+            const serial = parseFloat(rawStr);
+            const offset = serial < 60 ? 25568 : 25569;
+            const dateObj = new Date(Math.round((serial - offset) * 86400 * 1000));
+            if (!isNaN(dateObj.getTime())) {
+              const yy = dateObj.getFullYear();
+              const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const dd = String(dateObj.getDate()).padStart(2, '0');
+              return `${yy}-${mm}-${dd}`;
             }
           }
-          if (projectIndex === -1) {
-            projectIndex = 1; // logical fallback index
+
+          // If it has letters, let JS Date try to convert it
+          if (/[a-zA-Z]/.test(rawStr)) {
+             const d = new Date(rawStr);
+             if (!isNaN(d.getTime())) {
+               const yy = d.getFullYear();
+               const mm = String(d.getMonth() + 1).padStart(2, '0');
+               const dd = String(d.getDate()).padStart(2, '0');
+               return `${yy}-${mm}-${dd}`;
+             }
           }
 
-          // Initialize with intelligent defaults for the 12-column template layout
-          let hLeadsIdx = 2; // "Housing Leads"
-          let hSvcIdx = 3;   // "Housing SVC"
-          let aLeadsIdx = 4; // "99 Acres Leads"
-          let aSvcIdx = 5;   // "99 Acres SVC"
-          let mLeadsIdx = 6; // "Magicbricks Leads"
-          let mSvcIdx = 7;   // "Magicbricks SVC"
-          let rLeadsIdx = 8; // "Roof & floor Leads"
-          let rSvcIdx = 9;   // "Roof & floor SVC"
-
-          // Map indexes precisely by headers to prevent layout collisions
-          for (let rowIdx = 0; rowIdx < Math.min(jsonData.length, 2); rowIdx++) {
-            const hRow = jsonData[rowIdx];
-            if (!hRow) continue;
-            hRow.forEach((val, colIdx) => {
-              const str = String(val || "").toLowerCase();
-              if (str.includes("housing")) {
-                if (str.includes("svc") || str.includes("visit") || str.includes("conducted")) {
-                  hSvcIdx = colIdx;
-                } else if (str.includes("lead") || str.includes("gen") || str.includes("total")) {
-                  hLeadsIdx = colIdx;
-                }
-              } else if (str.includes("99") || str.includes("acres")) {
-                if (str.includes("svc") || str.includes("visit") || str.includes("conducted")) {
-                  aSvcIdx = colIdx;
-                } else if (str.includes("lead") || str.includes("gen") || str.includes("total")) {
-                  aLeadsIdx = colIdx;
-                }
-              } else if (str.includes("magic")) {
-                if (str.includes("svc") || str.includes("visit") || str.includes("conducted")) {
-                  mSvcIdx = colIdx;
-                } else if (str.includes("lead") || str.includes("gen") || str.includes("total")) {
-                  mLeadsIdx = colIdx;
-                }
-              } else if (str.includes("roof") || str.includes("floor") || str.includes("r&f") || str.includes("r & f")) {
-                if (str.includes("svc") || str.includes("visit") || str.includes("conducted")) {
-                  rSvcIdx = colIdx;
-                } else if (str.includes("lead") || str.includes("gen") || str.includes("total")) {
-                  rLeadsIdx = colIdx;
-                }
-              }
-            });
-          }
-
-          const parseToISODate = (raw: string): string | null => {
-            if (!raw) return null;
-            if (/^\d+(\.\d+)?$/.test(raw)) {
-              const serial = parseFloat(raw);
-              const dateObj = new Date((serial - 25569) * 86400 * 1000);
-              if (!isNaN(dateObj.getTime())) {
-                return dateObj.toISOString().split("T")[0];
-              }
-            }
-            const parts = raw.split(/[-/.]/);
-            if (parts.length === 3) {
-              const p0 = parts[0].trim();
-              const p1 = parts[1].trim();
-              const p2 = parts[2].trim();
-              if (p0.length === 4) {
-                return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
-              } else if (p2.length === 4) {
+          // Otherwise split standard numeric formats (e.g., DD/MM/YYYY or YYYY-MM-DD or MM/DD/YYYY)
+          const parts = rawStr.split(/[-/.]/);
+          if (parts.length === 3) {
+            const p0 = parts[0].trim();
+            const p1 = parts[1].trim();
+            const p2 = parts[2].trim();
+            
+            // Format YYYY-MM-DD
+            if (p0.length === 4) {
+              return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
+            } 
+            
+            // Format DD/MM/YYYY or MM/DD/YYYY
+            if (p2.length === 4) {
+              const val0 = parseInt(p0, 10);
+              const val1 = parseInt(p1, 10);
+              if (val0 > 12) {
+                // p0 must be Day, p1 is Month
                 return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
-              } else if (p2.length === 2) {
-                return `20${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
+              } else if (val1 > 12) {
+                // p1 must be Day, p0 is Month
+                return `${p2}-${p0.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+              } else {
+                // Default to DD/MM/YYYY
+                return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
               }
+            } else if (p2.length === 2) {
+              // YY format
+              return `20${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
             }
-            const d = new Date(raw);
-            if (!isNaN(d.getTime())) {
-              return d.toISOString().split("T")[0];
-            }
-            return null;
-          };
-
-          const rowsToPreview: any[] = [];
-          for (let i = 1; i < jsonData.length; i++) {
-            const row = jsonData[i];
-            if (!row || row.length === 0) continue;
-
-            const rowDateRaw = String(row[dateIndex] || "").trim();
-            if (!rowDateRaw) continue;
-
-            const rowDateRawLower = rowDateRaw.toLowerCase();
-            if (
-              rowDateRawLower.includes("total") || 
-              rowDateRawLower.includes("week") || 
-              rowDateRawLower.includes("summary") ||
-              rowDateRawLower.includes("project") ||
-              rowDateRawLower.includes("date") ||
-              (rowDateRawLower.includes("may") && rowDateRawLower.includes("-") && rowDateRawLower.length > 10) ||
-              (rowDateRawLower.includes("june") && rowDateRawLower.includes("-") && rowDateRawLower.length > 10)
-            ) {
-              continue; // Skip calculated weekly/summary rows
-            }
-
-            const rowDate = parseToISODate(rowDateRaw);
-            if (!rowDate) continue;
-
-            const rowProject = String(row[projectIndex] || "").trim() || "Skyline Residency";
-
-            const portalChannels = [
-              { name: "Housing", genIdx: hLeadsIdx, svcIdx: hSvcIdx },
-              { name: "99 Acres", genIdx: aLeadsIdx, svcIdx: aSvcIdx },
-              { name: "Magicbricks", genIdx: mLeadsIdx, svcIdx: mSvcIdx },
-              { name: "Roof&floor", genIdx: rLeadsIdx, svcIdx: rSvcIdx }
-            ];
-
-            portalChannels.forEach(chan => {
-              const generated = parseInt(String(row[chan.genIdx] || "")) || 0;
-              const svc = parseInt(String(row[chan.svcIdx] || "")) || 0;
-
-              rowsToPreview.push({
-                date: rowDate,
-                project: rowProject,
-                portal: chan.name,
-                generated,
-                svs: svc,
-                svc,
-                walkin: 0,
-                gross: 0,
-                net: 0,
-                editReason: "Spreadsheet Horizontal Bulk Upload"
-              });
-            });
           }
 
-          if (rowsToPreview.length === 0) {
-            setUploadError("No valid rows could be parsed from the horizontal spreadsheet.");
-            return;
+          const d = new Date(rawStr);
+          if (!isNaN(d.getTime())) {
+            const yy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${yy}-${mm}-${dd}`;
           }
-
-          setParsedRows(rowsToPreview);
-          return;
-        }
-
-        // Traditional vertical mappings fallback
-        const dateIdx = findHeaderIndex(headers, ["date", "configuration date", "day"]);
-        const projIdx = findHeaderIndex(headers, ["project", "project name", "project trace", "property"]);
-        const portalIdx = findHeaderIndex(headers, ["portal", "portal name", "source", "platform"]);
-        const genIdx = findHeaderIndex(headers, ["generated leads", "leads generated", "generated", "leads", "lead count", "total leads", "totalleads"]);
-        const svsIdx = findHeaderIndex(headers, ["svs", "svs scheduled", "scheduled site visits", "scheduled", "site visits scheduled", "allocation"]);
-        const svcIdx = findHeaderIndex(headers, ["svc", "site visits conducted", "conducted site visits", "conducted", "site visits conducted", "site visits", "svc conducted"]);
-        const walkinIdx = findHeaderIndex(headers, ["walkin", "walk-in", "walkins"]);
-        const grossIdx = findHeaderIndex(headers, ["gross", "gross booking", "gross bookings", "booked"]);
-        const netIdx = findHeaderIndex(headers, ["net", "net booking", "net bookings", "booked"]);
-        const reasonIdx = findHeaderIndex(headers, ["edit reason", "reason", "modification reason", "comment", "remarks"]);
-
-        if (dateIdx === -1 || projIdx === -1 || portalIdx === -1) {
-          setUploadError("Required columns mapping failed. File must contain at least 'Date', 'Project', and 'Portal' columns.");
-          return;
-        }
+          return null;
+        };
 
         const rowsToPreview: any[] = [];
-        for (let i = 1; i < jsonData.length; i++) {
-          const row = jsonData[i];
-          if (!row || row.length === 0) continue;
+        let statProcessed = 0;
+        let statFailed = 0;
+        let statSuccess = 0;
+        const failedReasons: { rowNumber: number; reason: string }[] = [];
 
-          const isAllEmpty = row.every((val: any) => val === undefined || val === null || String(val).trim() === "");
-          if (isAllEmpty) continue;
-
-          const rowDateRaw = String(row[dateIdx] || "").trim();
-          let rowDate = rowDateRaw;
-
-          // Excel date serial number parsing
-          if (/^\d+(\.\d+)?$/.test(rowDateRaw)) {
-            const serial = parseFloat(rowDateRaw);
-            const dateObj = new Date((serial - 25569) * 86450 * 1000);
-            if (!isNaN(dateObj.getTime())) {
-              rowDate = dateObj.toISOString().split("T")[0];
+        const addOrMergeRowToPreview = (newRow: any) => {
+          const existingIdx = rowsToPreview.findIndex(
+            r => r.date === newRow.date && r.project === newRow.project && r.portal === newRow.portal
+          );
+          if (existingIdx >= 0) {
+            const ext = rowsToPreview[existingIdx];
+            ext.generated = safeParseInt(ext.generated) + safeParseInt(newRow.generated);
+            ext.svs = safeParseInt(ext.svs) + safeParseInt(newRow.svs);
+            ext.svc = safeParseInt(ext.svc) + safeParseInt(newRow.svc);
+            ext.walkin = safeParseInt(ext.walkin) + safeParseInt(newRow.walkin);
+            ext.gross = safeParseInt(ext.gross) + safeParseInt(newRow.gross);
+            ext.net = safeParseInt(ext.net) + safeParseInt(newRow.net);
+            if (newRow.editReason && !ext.editReason.includes(newRow.editReason)) {
+               ext.editReason += ` & ${newRow.editReason}`;
             }
           } else {
-            // "30/05/2026" or "30-05-2026"
-            const parts = rowDateRaw.split(/[-/]/);
-            if (parts.length === 3) {
-              if (parts[0].length === 4) {
-                rowDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-              } else if (parts[2].length === 4) {
-                rowDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-              }
+            rowsToPreview.push({
+              ...newRow,
+              generated: safeParseInt(newRow.generated),
+              svs: safeParseInt(newRow.svs),
+              svc: safeParseInt(newRow.svc),
+              walkin: safeParseInt(newRow.walkin),
+              gross: safeParseInt(newRow.gross),
+              net: safeParseInt(newRow.net),
+            });
+          }
+        };
+
+        // Iterate through all worksheets
+        workbook.SheetNames.forEach((sheetName) => {
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+          if (jsonData.length < 2) {
+            return; // Skip empty sheets
+          }
+
+          // 1. Dynamic header row detection for this sheet
+          let headerRowIdx = 0;
+          let maxMatches = -1;
+          const knownKeywords = [
+            "date", "day", "project", "property", "trace", "portal", "source", "platform", "leads", "generated", 
+            "svs", "svc", "walkin", "gross", "net", "housing", "acres", "99", "magic", "roof", "floor"
+          ];
+          
+          for (let rIdx = 0; rIdx < Math.min(jsonData.length, 10); rIdx++) {
+            const row = jsonData[rIdx];
+            if (!row) continue;
+            let matchCount = 0;
+            row.forEach((cell: any) => {
+              const cellStr = String(cell || "").toLowerCase();
+              knownKeywords.forEach(kw => {
+                if (cellStr.includes(kw)) {
+                  matchCount++;
+                }
+              });
+            });
+            if (matchCount > maxMatches) {
+              maxMatches = matchCount;
+              headerRowIdx = rIdx;
             }
           }
-
-          if (!rowDate) {
-            rowDate = new Date().toISOString().split("T")[0];
+          
+          if (maxMatches < 2) {
+            headerRowIdx = 0;
           }
 
-          const project = projIdx >= 0 ? String(row[projIdx] || "").trim() : "Skyline Residency";
-          const portalRaw = portalIdx >= 0 ? String(row[portalIdx] || "").trim() : "Housing";
-          
-          let portal = portalRaw;
-          const pLower = portalRaw.toLowerCase();
-          if (pLower.includes("housing")) portal = "Housing";
-          else if (pLower.includes("99") || pLower.includes("acres")) portal = "99 Acres";
-          else if (pLower.includes("magic") || pLower.includes("brick")) portal = "Magicbricks";
-          else if (pLower.includes("roof") || pLower.includes("floor") || pLower.includes("rf")) portal = "Roof&floor";
+          const headers = jsonData[headerRowIdx] ? jsonData[headerRowIdx].map((h: any) => String(h || "").trim()) : [];
 
-          const generated = genIdx >= 0 ? parseInt(String(row[genIdx])) || 0 : 0;
-          const svs = svsIdx >= 0 ? parseInt(String(row[svsIdx])) || 0 : 0;
-          const svc = svcIdx >= 0 ? parseInt(String(row[svcIdx])) || 0 : 0;
-          const walkin = walkinIdx >= 0 ? parseInt(String(row[walkinIdx])) || 0 : 0;
-          const gross = grossIdx >= 0 ? parseInt(String(row[grossIdx])) || 0 : 0;
-          const net = netIdx >= 0 ? parseInt(String(row[netIdx])) || 0 : 0;
-          const editReason = reasonIdx >= 0 ? String(row[reasonIdx] || "").trim() : "Spreadsheet Bulk Upload";
+          // Metadata inference relative to sheetName
+          const inferProjectFromMetadata = (): string => {
+            const textToScan = `${file.name} ${sheetName}`.toLowerCase();
+            for (const proj of projectsList) {
+              if (textToScan.includes(proj.toLowerCase())) {
+                return proj;
+              }
+            }
+            return projectsList.length > 0 ? projectsList[0] : "Skyline Residency";
+          };
+          const defaultInferredProject = inferProjectFromMetadata();
 
-          rowsToPreview.push({
-            date: rowDate,
-            project,
-            portal,
-            generated,
-            svs,
-            svc,
-            walkin,
-            gross,
-            net,
-            editReason
+          const inferPortalFromMetadata = (): string => {
+            const textToScan = `${file.name} ${sheetName}`.toLowerCase();
+            if (textToScan.includes("housing")) return "Housing";
+            if (textToScan.includes("99") || textToScan.includes("acres")) return "99 Acres";
+            if (textToScan.includes("magic")) return "Magicbricks";
+            if (textToScan.includes("roof") || textToScan.includes("floor")) return "Roof&floor";
+            return "Housing";
+          };
+          const defaultInferredPortal = inferPortalFromMetadata();
+
+          let lastSeenDateRaw = "";
+          let lastSeenProjectRaw = "";
+          let lastSeenPortalRaw = "";
+
+          // Explicit search for a portal column header (which makes this layout strictly vertical)
+          const portalIdx = findHeaderIndex(headers, ["portal", "portal name", "source", "platform"]);
+
+          // Horizontal layout can only occur if there is NO explicit portal header column,
+          // AND there is at least one portal keyword in the headers array.
+          const isHorizontalLayout = portalIdx === -1 && headers.some(h => {
+            const l = h.toLowerCase();
+            return l.includes("housing") || l.includes("99") || l.includes("acres") || l.includes("magic") || l.includes("roof") || l.includes("floor");
           });
-        }
+
+          if (isHorizontalLayout) {
+            let dateIndex = -1;
+            for (let rowIdx = 0; rowIdx < Math.min(jsonData.length, 3); rowIdx++) {
+              const hRow = jsonData[rowIdx];
+              if (!hRow) continue;
+              dateIndex = hRow.findIndex(val => {
+                const str = String(val || "").toLowerCase();
+                return /\b(date|day)\b/.test(str);
+              });
+              if (dateIndex !== -1) break;
+            }
+            if (dateIndex === -1) {
+              dateIndex = 0;
+            }
+
+            let projectIndex = -1;
+            for (let rowIdx = 0; rowIdx < Math.min(jsonData.length, 3); rowIdx++) {
+              const hRow = jsonData[rowIdx];
+              if (!hRow) continue;
+              const idx = hRow.findIndex(val => {
+                const str = String(val || "").toLowerCase();
+                return /\b(project|trace|property)\b/.test(str);
+              });
+              if (idx !== -1) {
+                projectIndex = idx;
+                break;
+              }
+            }
+            if (projectIndex === -1) {
+              projectIndex = 1;
+            }
+
+            // Gather all dynamic portal channels
+            interface PortalChannel {
+              name: string;
+              genIdx: number;
+              svcIdx: number;
+            }
+            const detectedChannelsMap: { [portalName: string]: PortalChannel } = {};
+
+            const numCols = Math.max(...jsonData.slice(0, 3).map(r => r ? r.length : 0));
+            
+            for (let colIdx = 0; colIdx < numCols; colIdx++) {
+              if (colIdx === dateIndex || colIdx === projectIndex) continue;
+
+              let portalName = "";
+              for (let scanCol = colIdx; scanCol >= 0; scanCol--) {
+                for (let rIdx = 0; rIdx < Math.min(jsonData.length, 3); rIdx++) {
+                  const val = String(jsonData[rIdx]?.[scanCol] || "").trim();
+                  if (!val) continue;
+                  
+                  let cleaned = val.replace(/\b(leads|leads gen|leads generated|total leads|lead|gen|svc|svs|site visits|site visit|visits|visit|conducted|scheduled|allocation|walkin|gross|net)\b/gi, "").trim();
+                  cleaned = cleaned.replace(/[-_()&]/g, " ").replace(/\s+/g, " ").trim();
+                  if (cleaned && cleaned.length > 1) {
+                    const cleanedLower = cleaned.toLowerCase();
+                    if (cleanedLower.includes("housing")) cleaned = "Housing";
+                    else if (cleanedLower.includes("99") || cleanedLower.includes("acres")) cleaned = "99 Acres";
+                    else if (cleanedLower.includes("magic")) cleaned = "Magicbricks";
+                    else if (cleanedLower.includes("roof") || cleanedLower.includes("floor")) cleaned = "Roof&floor";
+                    
+                    portalName = cleaned;
+                    break;
+                  }
+                }
+                if (portalName) break;
+              }
+
+              if (!portalName) continue;
+
+              let isSvc = false;
+              let isLeads = false;
+              for (let rIdx = 0; rIdx < Math.min(jsonData.length, 3); rIdx++) {
+                const cellVal = String(jsonData[rIdx]?.[colIdx] || "").toLowerCase();
+                if (cellVal.includes("svc") || cellVal.includes("visit") || cellVal.includes("conducted") || cellVal.includes("site") || cellVal.includes("allocation")) {
+                  isSvc = true;
+                  break;
+                } else if (cellVal.includes("lead") || cellVal.includes("gen") || cellVal.includes("total")) {
+                  isLeads = true;
+                  break;
+                }
+              }
+
+              if (!isSvc && !isLeads) {
+                for (let rIdx = 0; rIdx < Math.min(jsonData.length, 3); rIdx++) {
+                  const cellVal = String(jsonData[rIdx]?.[colIdx] || "").toLowerCase();
+                  if (cellVal.includes("svs") || cellVal.includes("sched")) {
+                    isSvc = true;
+                    break;
+                  }
+                }
+              }
+
+              if (!isSvc && !isLeads) {
+                let portalHeadingCol = colIdx;
+                for (let scanCol = colIdx; scanCol >= 0; scanCol--) {
+                  let foundPortal = false;
+                  for (let rIdx = 0; rIdx < Math.min(jsonData.length, 3); rIdx++) {
+                    const cellVal = String(jsonData[rIdx]?.[scanCol] || "").toLowerCase();
+                    if (cellVal.includes("housing") || cellVal.includes("acres") || cellVal.includes("99") || cellVal.includes("magic") || cellVal.includes("roof") || cellVal.includes("floor") || cellVal.includes("leads") || cellVal.includes("visits") || cellVal.includes("svc")) {
+                      portalHeadingCol = scanCol;
+                      foundPortal = true;
+                      break;
+                    }
+                  }
+                  if (foundPortal) break;
+                }
+                if ((colIdx - portalHeadingCol) % 2 === 0) {
+                  isLeads = true;
+                } else {
+                  isSvc = true;
+                }
+              }
+
+              if (!detectedChannelsMap[portalName]) {
+                detectedChannelsMap[portalName] = {
+                  name: portalName,
+                  genIdx: -1,
+                  svcIdx: -1
+                };
+              }
+
+              if (isSvc) {
+                detectedChannelsMap[portalName].svcIdx = colIdx;
+              }
+              if (isLeads) {
+                detectedChannelsMap[portalName].genIdx = colIdx;
+              }
+            }
+
+            const portalChannels = Object.values(detectedChannelsMap);
+
+            for (let i = headerRowIdx + 1; i < jsonData.length; i++) {
+              const row = jsonData[i];
+              if (!row || row.length === 0) continue;
+
+              const isAllEmpty = row.every((val: any) => val === undefined || val === null || String(val).trim() === "");
+              if (isAllEmpty) continue;
+
+              let rowDateRaw = String(row[dateIndex] || "").trim();
+              if (!rowDateRaw && lastSeenDateRaw) rowDateRaw = lastSeenDateRaw;
+              else if (rowDateRaw) lastSeenDateRaw = rowDateRaw;
+              
+              if (!rowDateRaw) {
+                 continue;
+              }
+
+              const rowDateRawLower = rowDateRaw.toLowerCase();
+              if (
+                rowDateRawLower.includes("total") || 
+                rowDateRawLower.includes("week") || 
+                rowDateRawLower.includes("summary") ||
+                rowDateRawLower.includes("project") ||
+                rowDateRawLower.includes("date")
+              ) {
+                continue; // Skip calculated weekly/summary rows
+              }
+
+              statProcessed++;
+
+              const rowDate = parseToISODate(rowDateRaw);
+              if (!rowDate) {
+                statFailed++;
+                failedReasons.push({ rowNumber: i + 1, reason: `Could not parse date format: ${rowDateRaw} in sheet '${sheetName}'` });
+                continue;
+              }
+
+              let rowProject = String(row[projectIndex] || "").trim();
+              if (!rowProject && lastSeenProjectRaw) rowProject = lastSeenProjectRaw;
+              else if (rowProject) lastSeenProjectRaw = rowProject;
+              if (!rowProject) rowProject = defaultInferredProject;
+
+              let rowHasData = false;
+              portalChannels.forEach(chan => {
+                const genVal = chan.genIdx >= 0 ? row[chan.genIdx] : undefined;
+                const svcVal = chan.svcIdx >= 0 ? row[chan.svcIdx] : undefined;
+                
+                if ((genVal === undefined || genVal === null || genVal === "") && 
+                    (svcVal === undefined || svcVal === null || svcVal === "")) {
+                   return; // Skip empty cells
+                }
+
+                const generated = safeParseInt(genVal);
+                const svc = safeParseInt(svcVal);
+
+                if (generated === 0 && svc === 0) {
+                  return; // Skip empty zeroes
+                }
+
+                rowHasData = true;
+
+                addOrMergeRowToPreview({
+                  date: rowDate,
+                  project: rowProject,
+                  portal: chan.name,
+                  generated,
+                  svs: svc,
+                  svc,
+                  walkin: 0,
+                  gross: 0,
+                  net: 0,
+                  editReason: "Spreadsheet Horizontal Bulk Upload (" + sheetName + ")"
+                });
+              });
+              
+              if (rowHasData) {
+                 statSuccess++;
+              } else {
+                 statFailed++;
+                 failedReasons.push({ rowNumber: i + 1, reason: `No non-zero lead/svc values found for this row in sheet '${sheetName}'` });
+              }
+            }
+          } else {
+            // Traditional vertical mappings fallback
+            const dateIdx = findHeaderIndex(headers, ["date", "configuration date", "day"]);
+            const projIdx = findHeaderIndex(headers, ["project", "project name", "project trace", "property"]);
+            const portalsColIdx = findHeaderIndex(headers, ["portal", "portal name", "source", "platform"]);
+            const genIdx = findHeaderIndex(headers, ["generated leads", "leads generated", "generated", "leads", "lead", "lead count", "total leads", "totalleads", "leadcount"]);
+            const svsIdx = findHeaderIndex(headers, ["svs", "svs scheduled", "scheduled site visits", "scheduled", "site visits scheduled", "allocation", "scheduled visit", "sch visits"]);
+            const svcIdx = findHeaderIndex(headers, ["svc", "site visits conducted", "conducted site visits", "conducted", "site visits conducted", "site visits", "site visit", "svc conducted", "conducted visit", "cond visits"]);
+            const walkinIdx = findHeaderIndex(headers, ["walkin", "walk-in", "walkins", "walk ins", "walk-ins"]);
+            const grossIdx = findHeaderIndex(headers, ["gross", "gross booking", "gross bookings", "booked", "gross booked"]);
+            const netIdx = findHeaderIndex(headers, ["net", "net booking", "net bookings", "booked", "net booked"]);
+            const reasonIdx = findHeaderIndex(headers, ["edit reason", "reason", "modification reason", "comment", "remarks"]);
+
+            if (dateIdx === -1) {
+              statFailed++;
+              failedReasons.push({ rowNumber: 1, reason: `Required column mapping failed. File must contain a 'Date' or 'Day' column in sheet '${sheetName}'.` });
+              return;
+            }
+
+            for (let i = headerRowIdx + 1; i < jsonData.length; i++) {
+              const row = jsonData[i];
+              if (!row || row.length === 0) continue;
+
+              const isAllEmpty = row.every((val: any) => val === undefined || val === null || String(val).trim() === "");
+              if (isAllEmpty) continue;
+              
+              let rowDateRaw = String(row[dateIdx] || "").trim();
+              if (!rowDateRaw && lastSeenDateRaw) rowDateRaw = lastSeenDateRaw;
+              else if (rowDateRaw) lastSeenDateRaw = rowDateRaw;
+
+              if (!rowDateRaw) {
+                 continue; // empty row date
+              }
+
+              const rowDateRawLower = rowDateRaw.toLowerCase();
+              if (
+                rowDateRawLower.includes("total") || 
+                rowDateRawLower.includes("week") || 
+                rowDateRawLower.includes("summary") ||
+                rowDateRawLower.includes("project") ||
+                rowDateRawLower.includes("date")
+              ) {
+                continue; // Skip calculated weekly/summary rows
+              }
+
+              statProcessed++;
+
+              let rowDate = parseToISODate(rowDateRaw);
+
+              if (!rowDate) {
+                 statFailed++;
+                 failedReasons.push({ rowNumber: i + 1, reason: `Invalid date format: ${rowDateRaw} in sheet '${sheetName}'` });
+                 continue;
+              }
+
+              let project = projIdx >= 0 ? String(row[projIdx] || "").trim() : "";
+              if (!project && lastSeenProjectRaw) project = lastSeenProjectRaw;
+              else if (project) lastSeenProjectRaw = project;
+              if (!project) project = defaultInferredProject;
+
+              let portalRaw = portalsColIdx >= 0 ? String(row[portalsColIdx] || "").trim() : "";
+              if (!portalRaw && lastSeenPortalRaw) portalRaw = lastSeenPortalRaw;
+              else if (portalRaw) lastSeenPortalRaw = portalRaw;
+              if (!portalRaw) {
+                 portalRaw = defaultInferredPortal;
+              }
+              
+              let portal = portalRaw;
+              const pLower = portalRaw.toLowerCase();
+              if (pLower.includes("housing")) portal = "Housing";
+              else if (pLower.includes("99") || pLower.includes("acres")) portal = "99 Acres";
+              else if (pLower.includes("magic") || pLower.includes("brick")) portal = "Magicbricks";
+              else if (pLower.includes("roof") || pLower.includes("floor") || pLower.includes("rf")) portal = "Roof&floor";
+
+              const generated = genIdx >= 0 ? safeParseInt(row[genIdx]) : 0;
+              const svs = svsIdx >= 0 ? safeParseInt(row[svsIdx]) : 0;
+              const svc = svcIdx >= 0 ? safeParseInt(row[svcIdx]) : 0;
+              const walkin = walkinIdx >= 0 ? safeParseInt(row[walkinIdx]) : 0;
+              const gross = grossIdx >= 0 ? safeParseInt(row[grossIdx]) : 0;
+              const net = netIdx >= 0 ? safeParseInt(row[netIdx]) : 0;
+              const editReason = reasonIdx >= 0 ? String(row[reasonIdx] || "").trim() : "Spreadsheet Bulk Upload (" + sheetName + ")";
+              
+              statSuccess++;
+
+              addOrMergeRowToPreview({
+                date: rowDate,
+                project,
+                portal,
+                generated,
+                svs,
+                svc,
+                walkin,
+                gross,
+                net,
+                editReason
+              });
+            }
+          }
+        });
 
         if (rowsToPreview.length === 0) {
           setUploadError("No valid rows could be parsed from the uploaded spreadsheet.");
-          return;
         }
+        
+        setUploadStats({
+          totalProcessed: statProcessed,
+          successCount: statSuccess,
+          failedCount: statFailed,
+          failedReasons
+        });
 
         setParsedRows(rowsToPreview);
       } catch (err: any) {
@@ -584,6 +845,23 @@ export default function PortalReportModule({
     const activeEmail = auth?.currentUser?.email || "gouthamarun123@gmail.com";
     const payloads: PortalReportRow[] = [];
     
+    // Determine the most frequent month in the uploaded dataset to auto-adjust filters
+    const monthCounts: { [key: string]: number } = {};
+    for (const item of parsedRows) {
+       const m = item.date ? item.date.substring(0, 7) : null;
+       if (m) {
+          monthCounts[m] = (monthCounts[m] || 0) + 1;
+       }
+    }
+    let primeMonth = filterMonth;
+    let maxCount = 0;
+    Object.entries(monthCounts).forEach(([m, count]) => {
+       if (count > maxCount) {
+          maxCount = count;
+          primeMonth = m;
+       }
+    });
+
     for (const item of parsedRows) {
       const existingRow = portalReports.find(
         (r) => r.date === item.date && r.project === item.project && r.portal === item.portal
@@ -597,7 +875,7 @@ export default function PortalReportModule({
         project: item.project,
         portal: item.portal,
         generated: item.generated,
-        svs: item.svc || item.svs || 0,
+        svs: item.svs || 0,
         svc: item.svc || 0,
         walkin: item.walkin || 0,
         gross: item.gross || 0,
@@ -617,6 +895,10 @@ export default function PortalReportModule({
       for (const payload of payloads) {
         await onSaveReport(payload);
       }
+    }
+
+    if (primeMonth) {
+      setFilterMonth(primeMonth);
     }
 
     setUploadSuccessMessage(`Successfully processed and loaded ${parsedRows.length} portal report records!`);
@@ -867,6 +1149,23 @@ export default function PortalReportModule({
     }
     return dateStr;
   };
+
+  // Dynamically generate months from reports, sorted descending, fallback to default months if none
+  const availableMonths = useMemo(() => {
+    const monthsSet = new Set<string>();
+    // Pre-populate with typical default sequence spanning the current year 2026
+    const defaultMonths = ["2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"];
+    defaultMonths.forEach(m => monthsSet.add(m));
+    
+    // Add real months from actual reports
+    portalReports.forEach(r => {
+      if (r.date && r.date.length >= 7) {
+        monthsSet.add(r.date.substring(0, 7));
+      }
+    });
+
+    return Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
+  }, [portalReports]);
 
   // Filter reports
   const filteredReports = portalReports.filter(r => {
@@ -1378,9 +1677,76 @@ export default function PortalReportModule({
                 </div>
               )}
 
+              {uploadStats && (
+                <div className={`border rounded-xl p-4 flex flex-col gap-3 text-xs font-medium ${
+                  uploadStats.failedCount === 0 && uploadStats.successCount > 0 
+                  ? 'bg-emerald-50 border-emerald-150 text-emerald-850'
+                  : uploadStats.successCount === 0 
+                  ? 'bg-rose-50 border-rose-150 text-rose-850'
+                  : 'bg-amber-50 border-amber-150 text-amber-850'
+                }`}>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-2.5">
+                      {uploadStats.failedCount === 0 ? (
+                         <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-600" />
+                      ) : uploadStats.successCount === 0 ? (
+                         <AlertCircle size={15} className="shrink-0 mt-0.5 text-rose-600" />
+                      ) : (
+                         <Info size={15} className="shrink-0 mt-0.5 text-amber-600" />
+                      )}
+                      <div>
+                        <span className="font-bold">Import Processing Results</span>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 font-sans">
+                          <span className="text-slate-700">Total Rows: <strong className="text-slate-900">{uploadStats.totalProcessed}</strong></span>
+                          <span className="text-emerald-700 font-semibold">Success: <strong className="text-emerald-800 font-bold">{uploadStats.successCount}</strong> ({uploadStats.totalProcessed > 0 ? Math.round((uploadStats.successCount / uploadStats.totalProcessed) * 100) : 0}%)</span>
+                          {uploadStats.failedCount > 0 && (
+                            <span className="text-rose-700 font-semibold">Failures/Skipped: <strong className="text-rose-800 font-bold">{uploadStats.failedCount}</strong> ({uploadStats.totalProcessed > 0 ? Math.round((uploadStats.failedCount / uploadStats.totalProcessed) * 100) : 0}%)</span>
+                          )}
+                        </div>
+                        {/* Interactive dynamic linear progress bar visual ratio helper */}
+                        <div className="mt-3.5 w-full max-w-md bg-slate-200/80 rounded-full h-2.5 overflow-hidden flex shadow-2xs border border-slate-300/40">
+                          {uploadStats.successCount > 0 && (
+                            <div 
+                              style={{ width: `${(uploadStats.successCount / (uploadStats.totalProcessed || 1)) * 100}%` }} 
+                              className="bg-emerald-500 h-full transition-all duration-500"
+                              title={`Success Rate: ${Math.round((uploadStats.successCount / (uploadStats.totalProcessed || 1)) * 100)}%`}
+                            />
+                          )}
+                          {uploadStats.failedCount > 0 && (
+                            <div 
+                              style={{ width: `${(uploadStats.failedCount / (uploadStats.totalProcessed || 1)) * 100}%` }} 
+                              className="bg-rose-500 h-full transition-all duration-500"
+                              title={`Failure/Skipped Rate: ${Math.round((uploadStats.failedCount / (uploadStats.totalProcessed || 1)) * 100)}%`}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {uploadStats.failedReasons.length > 0 && (
+                    <div className="mt-2 bg-white/60 border border-slate-200/50 rounded-lg p-3 max-h-32 overflow-y-auto">
+                      <p className="font-bold text-slate-700 mb-2 uppercase text-[10px] tracking-wider">Specific Row Processing Feedback:</p>
+                      <ul className="space-y-1">
+                        {uploadStats.failedReasons.slice(0, 50).map((r, i) => (
+                          <li key={i} className="text-rose-800 text-[11px] font-mono">
+                            <span className="font-bold text-rose-900 mr-2">Row {r.rowNumber}:</span> {r.reason}
+                          </li>
+                        ))}
+                        {uploadStats.failedReasons.length > 50 && (
+                          <li className="text-slate-500 text-[11px] font-mono italic mt-2">
+                            ...and {uploadStats.failedReasons.length - 50} more skipped rows.
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {uploadSuccessMessage && (
                 <div className="bg-emerald-50 border border-emerald-150 rounded-xl p-4 flex items-start gap-2.5 text-xs text-emerald-850 font-medium">
-                  <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-555" />
+                  <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-550" />
                   <div>
                     <span className="font-bold">Sync Completed</span>
                     <p className="mt-1 font-sans text-emerald-750 leading-relaxed font-semibold">{uploadSuccessMessage}</p>
@@ -1475,13 +1841,11 @@ export default function PortalReportModule({
               onChange={(e) => setFilterMonth(e.target.value)}
               className="p-2 pr-10 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-705 outline-hidden font-bold cursor-pointer hover:bg-slate-100/50 min-w-[140px] appearance-none"
             >
-              <option value="2026-03">March, 2026</option>
-              <option value="2026-04">April, 2026</option>
-              <option value="2026-05">May, 2026</option>
-              <option value="2026-06">June, 2026</option>
-              <option value="2026-07">July, 2026</option>
-              <option value="2026-08">August, 2026</option>
-              <option value="2026-09">September, 2026</option>
+              {availableMonths.map((m) => (
+                <option key={m} value={m}>
+                  {getMonthName(m)}
+                </option>
+              ))}
             </select>
             <Calendar size={13} className="absolute right-3 text-slate-400 pointer-events-none" />
           </div>
@@ -1655,8 +2019,14 @@ export default function PortalReportModule({
               <tbody className="divide-y divide-slate-150 font-medium text-slate-705">
                 {tableRenderRows.map((row) => {
                   if (row.isWeeklySummary) {
-                    const weeklyOverallLeads = (row.Housing?.leads || 0) + (row["99 Acres"]?.leads || 0) + (row.Magicbricks?.leads || 0) + (row["Roof&floor"]?.leads || 0);
-                    const weeklyOverallSvc = (row.Housing?.svc || 0) + (row["99 Acres"]?.svc || 0) + (row.Magicbricks?.svc || 0) + (row["Roof&floor"]?.svc || 0);
+                    let weeklyOverallLeads = 0;
+                    let weeklyOverallSvc = 0;
+                    portals.forEach(p => {
+                      if (filterPortal === "all" || filterPortal === p) {
+                        weeklyOverallLeads += row[p]?.leads || 0;
+                        weeklyOverallSvc += row[p]?.svc || 0;
+                      }
+                    });
                     
                     return (
                       <tr
@@ -1721,9 +2091,14 @@ export default function PortalReportModule({
                   const rfRowLeads = row["Roof&floor"]?.leads || 0;
                   const rfRowSvc = row["Roof&floor"]?.svc || 0;
 
-                  // Date-wise cross totals
-                  const rowOverallLeads = housingRowLeads + acresRowLeads + mbRowLeads + rfRowLeads;
-                  const rowOverallSvc = housingRowSvc + acresRowSvc + mbRowSvc + rfRowSvc;
+                  let rowOverallLeads = 0;
+                  let rowOverallSvc = 0;
+                  portals.forEach(p => {
+                    if (filterPortal === "all" || filterPortal === p) {
+                      rowOverallLeads += row[p]?.leads || 0;
+                      rowOverallSvc += row[p]?.svc || 0;
+                    }
+                  });
 
                   const isExpanded = expandedDate === row.date;
 
