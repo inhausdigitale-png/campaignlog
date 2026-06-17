@@ -394,12 +394,23 @@ export default function App() {
           clicks: campaign.clicks,
           impression: campaign.impressions,
         };
+        // Optimistic State Update
+        setCampaignPerformances(prev => prev.map(p => p.id === campaign.id ? updatedPerf : p));
         await dataService.saveCampaignPerformance(updatedPerf);
       }
     } else {
+      // Optimistic State Update
+      setCampaigns(prev => {
+        const exist = prev.some(c => c.id === campaign.id);
+        if (exist) {
+          return prev.map(c => c.id === campaign.id ? campaign : c);
+        } else {
+          return [campaign, ...prev];
+        }
+      });
       await dataService.saveCampaign(campaign, operatorEmail);
     }
-    await loadAllDatabaseStates(); // reload state maps
+    await loadAllDatabaseStates(false); // background reload, no spinner overlay
   };
 
   // Action: Campaign Deletion
@@ -490,8 +501,85 @@ export default function App() {
   };
 
   const handleSaveChangeLogEntry = async (chg: ChangeLogEntry) => {
+    // Optimistic State Update
+    setChangeLogEntries(prev => {
+      const idx = prev.findIndex(item => item.id === chg.id);
+      if (idx !== -1) {
+        return prev.map(item => item.id === chg.id ? chg : item);
+      } else {
+        return [chg, ...prev];
+      }
+    });
     await dataService.saveChangeLogEntry(chg);
-    await loadAllDatabaseStates();
+    await loadAllDatabaseStates(false); // background sync, no spinner overlay
+  };
+
+  const handleSaveCampaignsBulk = async (camps: Campaign[]) => {
+    const operatorEmail = user?.email || "anonymous_sandbox@example.com";
+    
+    // 1. Optimistic Updates
+    setCampaigns(prev => {
+      const copy = [...prev];
+      camps.forEach(camp => {
+        if (!camp.id.startsWith("perf-")) {
+          const idx = copy.findIndex(c => c.id === camp.id);
+          if (idx !== -1) {
+            copy[idx] = camp;
+          } else {
+            copy.unshift(camp);
+          }
+        }
+      });
+      return copy;
+    });
+
+    setCampaignPerformances(prev => {
+      const copy = [...prev];
+      camps.forEach(camp => {
+        if (camp.id.startsWith("perf-")) {
+          const idx = copy.findIndex(p => p.id === camp.id);
+          if (idx !== -1) {
+            copy[idx] = {
+              ...copy[idx],
+              campaignName: camp.name,
+              amountSpend: camp.spend,
+              leads: camp.conversions,
+              clicks: camp.clicks,
+              impression: camp.impressions,
+            };
+          }
+        }
+      });
+      return copy;
+    });
+
+    // 2. Database Save
+    await dataService.saveCampaignsBulk(camps, operatorEmail);
+
+    // 3. Low priority reload
+    await loadAllDatabaseStates(false);
+  };
+
+  const handleSaveChangeLogEntriesBulk = async (logs: ChangeLogEntry[]) => {
+    // 1. Optimistic Update
+    setChangeLogEntries(prev => {
+      const copy = [...prev];
+      logs.forEach(log => {
+        const idx = copy.findIndex(l => l.id === log.id);
+        if (idx !== -1) {
+          copy[idx] = log;
+        } else {
+          copy.unshift(log);
+        }
+      });
+      return copy;
+    });
+
+    // 2. Database Save
+    await dataService.saveChangeLogEntriesBulk(logs);
+
+    // 3. Low priority reload
+    await loadAllDatabaseStates(false);
   };
 
   const handleDeleteChangeLogEntry = async (id: string) => {
@@ -1023,8 +1111,10 @@ export default function App() {
                   campaigns={mergedCampaigns}
                   creatives={mergedCreatives}
                   onSaveCampaign={handleSaveCampaign}
+                  onSaveCampaignsBulk={handleSaveCampaignsBulk}
                   onDeleteCampaign={handleDeleteCampaign}
                   onSaveChangeLog={handleSaveChangeLogEntry}
+                  onSaveChangeLogEntriesBulk={handleSaveChangeLogEntriesBulk}
                   onDeleteChangeLog={handleDeleteChangeLogEntry}
                   changeLogs={changeLogEntries}
                   comparisons={metricComparisons}
@@ -1071,6 +1161,7 @@ export default function App() {
                     onDeleteReport={handleDeletePortalReport}
                     onClearAllReports={handleClearAllPortalReports}
                     rolePermission={currentRolePermission}
+                    leads={leads}
                   />
                 </div>
               )}

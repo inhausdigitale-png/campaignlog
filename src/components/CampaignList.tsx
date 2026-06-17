@@ -38,8 +38,10 @@ interface CampaignListProps {
   campaigns: Campaign[];
   creatives?: CreativeAsset[];
   onSaveCampaign: (campaign: Campaign) => Promise<void>;
+  onSaveCampaignsBulk?: (campaigns: Campaign[]) => Promise<void>;
   onDeleteCampaign: (id: string, name: string) => Promise<void>;
   onSaveChangeLog?: (chg: ChangeLogEntry) => Promise<void>;
+  onSaveChangeLogEntriesBulk?: (entries: ChangeLogEntry[]) => Promise<void>;
   rolePermission?: UserRolePermission;
   changeLogs?: ChangeLogEntry[];
   comparisons?: MetricComparison[];
@@ -53,8 +55,10 @@ export default function CampaignList({
   campaigns,
   creatives = [],
   onSaveCampaign,
+  onSaveCampaignsBulk,
   onDeleteCampaign,
   onSaveChangeLog,
+  onSaveChangeLogEntriesBulk,
   onDeleteChangeLog,
   changeLogs = [],
   comparisons = [],
@@ -265,7 +269,7 @@ export default function CampaignList({
       cpl: formCpl !== "" ? Number(formCpl) : undefined,
     };
 
-    await onSaveCampaign(baseCampaign);
+    const campaignSavePromise = onSaveCampaign(baseCampaign);
 
     // If editing an existing campaign, automatically append a detailed audit ChangeLogEntry entry
     if (editingCampaign && onSaveChangeLog) {
@@ -329,7 +333,16 @@ export default function CampaignList({
         createdAt: new Date().toISOString()
       };
 
-      await onSaveChangeLog(chgLog);
+      const logSavePromise = onSaveChangeLog(chgLog);
+
+      // Save both in background to prevent modal freezing
+      Promise.all([campaignSavePromise, logSavePromise]).catch(err => {
+        console.error("Background single camp save failed:", err);
+      });
+    } else {
+      campaignSavePromise.catch(err => {
+        console.error("Background single camp save failed:", err);
+      });
     }
 
     setShowModal(false);
@@ -341,6 +354,9 @@ export default function CampaignList({
 
     const reasonText = bulkEditReason.trim() || "Bulk parameter updates on select operational cohorts.";
     const processedCampaigns = campaigns.filter((c) => selectedCampaignIds.includes(c.id));
+
+    const campaignsToSave: Campaign[] = [];
+    const changeLogsToSave: ChangeLogEntry[] = [];
 
     for (const c of processedCampaigns) {
       const changesList: string[] = [];
@@ -389,9 +405,9 @@ export default function CampaignList({
       }
 
       if (changesList.length > 0) {
-        await onSaveCampaign(updatedCamp);
+        campaignsToSave.push(updatedCamp);
 
-        if (onSaveChangeLog) {
+        if (onSaveChangeLog || onSaveChangeLogEntriesBulk) {
           const chgLog: ChangeLogEntry = {
             id: "chg-" + Math.random().toString(36).substring(2, 9),
             date: new Date().toISOString().split("T")[0],
@@ -405,8 +421,25 @@ export default function CampaignList({
             reason: reasonText,
             createdAt: new Date().toISOString()
           };
-          await onSaveChangeLog(chgLog);
+          changeLogsToSave.push(chgLog);
         }
+      }
+    }
+
+    // Process saving using optimistic batched actions
+    if (campaignsToSave.length > 0) {
+      if (onSaveCampaignsBulk) {
+        onSaveCampaignsBulk(campaignsToSave).catch(err => console.error("Bulk camp save failed:", err));
+      } else {
+        Promise.all(campaignsToSave.map(c => onSaveCampaign(c))).catch(err => console.error("Fallback camp saves failed:", err));
+      }
+    }
+
+    if (changeLogsToSave.length > 0) {
+      if (onSaveChangeLogEntriesBulk) {
+        onSaveChangeLogEntriesBulk(changeLogsToSave).catch(err => console.error("Bulk changelogs save failed:", err));
+      } else if (onSaveChangeLog) {
+        Promise.all(changeLogsToSave.map(l => onSaveChangeLog(l))).catch(err => console.error("Fallback changelog saves failed:", err));
       }
     }
 
@@ -430,8 +463,8 @@ export default function CampaignList({
 
     setFeedbackAlert({
       isOpen: true,
-      title: "Bulk Update Complete",
-      message: `Successfully processed parameter optimizations for ${processedCampaigns.length} campaigns.`
+      title: "Bulk Updates Appled Instantly",
+      message: `Updating parameters for ${processedCampaigns.length} campaigns. Operational dashboard updated in real-time.`
     });
   };
 

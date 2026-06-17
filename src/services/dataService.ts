@@ -671,6 +671,130 @@ export const dataService = {
     return finalCampaign;
   },
 
+  async saveCampaignsBulk(campaigns: Campaign[], loggedInUserEmail: string): Promise<Campaign[]> {
+    if (campaigns.length === 0) return [];
+
+    const list = loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS);
+    const auditLogs = loadLocal<AuditLog>(KEYS.AUDIT_LOGS, INITIAL_AUDITS);
+    const perfList = loadLocal<CampaignPerformance>(KEYS.PERF_TRACKERS, INITIAL_PERF_TRACKERS);
+
+    const finalCampaigns: Campaign[] = [];
+    const auditRecords: AuditLog[] = [];
+    
+    const normalCampsToSync: Campaign[] = [];
+    const perfCampsToSync: CampaignPerformance[] = [];
+
+    for (const c of campaigns) {
+      if (c.id.startsWith("perf-")) {
+        const originalPerf = perfList.find(p => p.id === c.id);
+        if (originalPerf) {
+          const updatedPerf: CampaignPerformance = {
+            ...originalPerf,
+            campaignName: c.name,
+            amountSpend: c.spend,
+            leads: c.conversions,
+            clicks: c.clicks,
+            impression: c.impressions,
+            adsetName: c.adset,
+            creativeType: c.creativeType,
+            campaignManager: c.campaignManager,
+            cpl: c.cpl,
+          };
+          
+          const idx = perfList.findIndex(p => p.id === c.id);
+          if (idx !== -1) {
+            perfList[idx] = updatedPerf;
+          } else {
+            perfList.unshift(updatedPerf);
+          }
+          
+          perfCampsToSync.push(updatedPerf);
+          finalCampaigns.push(c);
+        }
+      } else {
+        const isNew = !c.id || c.id.length === 0 || c.id.startsWith("temp-");
+        const activeId = isNew ? "camp-" + Math.random().toString(36).substring(2, 9) : c.id;
+        const finalCampaign: Campaign = {
+          ...c,
+          id: activeId,
+          updatedAt: new Date().toISOString(),
+          createdAt: c.createdAt || new Date().toISOString(),
+        };
+
+        const idx = list.findIndex(item => item.id === finalCampaign.id);
+        let logDescription = `Bulk parameter optimizations for campaign '${finalCampaign.name}'.`;
+        
+        if (idx !== -1) {
+          const prev = list[idx];
+          const changes: string[] = [];
+          if (prev.budget !== finalCampaign.budget) changes.push(`Budget altered from ₹${prev.budget} to ₹${finalCampaign.budget}`);
+          if (prev.status !== finalCampaign.status) changes.push(`Status converted from '${prev.status}' to '${finalCampaign.status}'`);
+          if (prev.name !== finalCampaign.name) changes.push(`Name retitled from '${prev.name}' to '${finalCampaign.name}'`);
+          if (prev.spend !== finalCampaign.spend) changes.push(`Spend changed from ₹${prev.spend} to ₹${finalCampaign.spend}`);
+          if (prev.conversions !== finalCampaign.conversions) changes.push(`Conversions adjusted from ${prev.conversions} to ${finalCampaign.conversions}`);
+
+          if (changes.length > 0) {
+            logDescription = `Altered campaign '${finalCampaign.name}' via bulk edit: ` + changes.join("; ");
+          }
+          list[idx] = finalCampaign;
+        } else {
+          list.push(finalCampaign);
+        }
+
+        normalCampsToSync.push(finalCampaign);
+        finalCampaigns.push(finalCampaign);
+
+        auditRecords.push({
+          id: "log-" + Math.random().toString(36).substring(2, 9),
+          campaignId: finalCampaign.id,
+          campaignName: finalCampaign.name,
+          changedBy: loggedInUserEmail || "anonymous_ops",
+          action: "Bulk Update Campaign",
+          details: logDescription,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    saveLocal(KEYS.CAMPAIGNS, list);
+    saveLocal(KEYS.PERF_TRACKERS, perfList);
+    
+    if (auditRecords.length > 0) {
+      auditRecords.forEach(r => auditLogs.unshift(r));
+      saveLocal(KEYS.AUDIT_LOGS, auditLogs);
+    }
+
+    if (isFirebaseEnabled) {
+      try {
+        const batch = writeBatch(db);
+        let count = 0;
+
+        normalCampsToSync.forEach((fc) => {
+          batch.set(getDocRef("campaigns", fc.id), cleanUndefinedForFirestore(fc));
+          count++;
+        });
+
+        perfCampsToSync.forEach((perf) => {
+          batch.set(getDocRef("campaign_performances", perf.id), cleanUndefinedForFirestore(perf));
+          count++;
+        });
+
+        auditRecords.forEach((ca) => {
+          batch.set(getDocRef("audit_logs", ca.id), cleanUndefinedForFirestore(ca));
+          count++;
+        });
+
+        if (count > 0) {
+          await withWriteTimeout(batch.commit(), `campaign_bulk_batch_${count}`);
+        }
+      } catch (err) {
+        console.warn("[FIREBASE] saveCampaignsBulk Cloud sync failed:", err);
+      }
+    }
+
+    return finalCampaigns;
+  },
+
   async deleteCampaign(id: string, name: string, loggedInUserEmail: string): Promise<boolean> {
     // 1. Local Cache
     const list = loadLocal<Campaign>(KEYS.CAMPAIGNS, INITIAL_CAMPAIGNS);
@@ -1102,6 +1226,46 @@ export const dataService = {
       }
     }
     return finalChg;
+  },
+
+  async saveChangeLogEntriesBulk(entries: ChangeLogEntry[]): Promise<ChangeLogEntry[]> {
+    if (entries.length === 0) return [];
+
+    const list = loadLocal<ChangeLogEntry>(KEYS.CHANGE_LOGS, INITIAL_CHANGE_LOG_ENTRIES);
+
+    const finalEntries = entries.map(chg => {
+      const isNew = !chg.id || chg.id.length === 0 || chg.id.startsWith("temp-") || chg.id.startsWith("chg-temp-");
+      const activeId = isNew ? "chg-" + Math.random().toString(36).substring(2, 9) : chg.id;
+      return {
+        ...chg,
+        id: activeId,
+        createdAt: chg.createdAt || new Date().toISOString(),
+      };
+    });
+
+    for (const finalEntry of finalEntries) {
+      const idx = list.findIndex((c) => c.id === finalEntry.id);
+      if (idx !== -1) {
+        list[idx] = finalEntry;
+      } else {
+        list.unshift(finalEntry);
+      }
+    }
+    saveLocal(KEYS.CHANGE_LOGS, list);
+
+    if (isFirebaseEnabled) {
+      try {
+        const batch = writeBatch(db);
+        finalEntries.forEach((fe) => {
+          batch.set(getDocRef("change_log_entries", fe.id), cleanUndefinedForFirestore(fe));
+        });
+        await withWriteTimeout(batch.commit(), `changelog_bulk_batch`);
+      } catch (err) {
+        console.warn("[FIREBASE] saveChangeLogEntriesBulk Cloud sync failed:", err);
+      }
+    }
+
+    return finalEntries;
   },
 
   async deleteChangeLogEntry(id: string): Promise<boolean> {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { PortalReportRow, UserRolePermission } from "../types";
+import { PortalReportRow, UserRolePermission, Lead } from "../types";
 import { auth } from "../firebase";
 import * as XLSX from "xlsx";
 import {
@@ -36,7 +36,9 @@ import {
   AlertTriangle,
   Settings,
   LayoutDashboard,
-  TableProperties
+  TableProperties,
+  Mail,
+  Phone
 } from "lucide-react";
 import PortalDashboard from "./PortalDashboard";
 
@@ -47,6 +49,7 @@ interface PortalReportModuleProps {
   onDeleteReport: (id: string) => Promise<void>;
   onClearAllReports?: () => Promise<void>;
   rolePermission?: UserRolePermission;
+  leads?: Lead[];
 }
 
 export default function PortalReportModule({
@@ -71,6 +74,7 @@ export default function PortalReportModule({
     canDeleteTargets: true,
     canManageRules: true
   },
+  leads = [],
 }: PortalReportModuleProps) {
 
   // Modal controllers
@@ -269,6 +273,54 @@ export default function PortalReportModule({
   const [filterProject, setFilterProject] = useState("all");
   const [filterPortal, setFilterPortal] = useState("all"); // "all" or specific portal name string
 
+  // Simple View Toggle & Focused Leads Selector
+  const [isSimpleView, setIsSimpleView] = useState(false);
+
+  const filteredLeads = useMemo(() => {
+    // Only focus on portal leads (leads with isPortalLead, portalSource, or platform belonging to a portal)
+    const portalLeadsList = leads.filter(l => 
+      l.isPortalLead || 
+      l.portalSource || 
+      ["Housing", "99 Acres", "Magicbricks", "Roof&floor", "Roof & Floor"].includes(l.platform)
+    );
+
+    return portalLeadsList.filter(lead => {
+      // 1. Filter by Portal Source
+      if (filterPortal !== "all") {
+        const sourceLower = (lead.portalSource || lead.platform || "").toLowerCase().replace(/\s+/g, "");
+        const filterLower = filterPortal.toLowerCase().replace(/\s+/g, "");
+        if (sourceLower !== filterLower) return false;
+      }
+
+      // 2. Filter by Month
+      if (filterMonth && lead.createdAt) {
+        const leadMonth = lead.createdAt.substring(0, 7); // e.g. "2026-06"
+        if (leadMonth !== filterMonth) return false;
+      }
+
+      return true;
+    });
+  }, [leads, filterPortal, filterMonth]);
+
+  const formatLeadDate = (dateStr: string) => {
+    if (!dateStr) return "N/A";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) {
+        return dateStr.split("T")[0];
+      }
+      const yy = d.getUTCFullYear();
+      const mmIndex = d.getUTCMonth();
+      const dd = d.getUTCDate();
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthName = months[mmIndex] || "Jan";
+      const formattedDay = dd < 10 ? "0" + dd : String(dd);
+      return `${formattedDay} ${monthName} ${yy}`;
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
   // Excel Spreadsheet Mapper Helper
   const findHeaderIndex = (headers: string[], possibleNames: string[]) => {
     return headers.findIndex((h) => {
@@ -310,7 +362,7 @@ export default function PortalReportModule({
           return;
         }
 
-        const workbook = XLSX.read(bstr, { type: "binary", cellDates: true });
+        const workbook = XLSX.read(bstr, { type: "binary", cellDates: !isCsv });
 
         const safeParseInt = (val: any): number => {
           if (val === undefined || val === null || val === "") return 0;
@@ -324,24 +376,24 @@ export default function PortalReportModule({
           if (!raw) return null;
           
           if (raw instanceof Date) {
-             const yy = raw.getFullYear();
-             const mm = String(raw.getMonth() + 1).padStart(2, '0');
-             const dd = String(raw.getDate()).padStart(2, '0');
+             const yy = raw.getUTCFullYear();
+             const mm = String(raw.getUTCMonth() + 1).padStart(2, '0');
+             const dd = String(raw.getUTCDate()).padStart(2, '0');
              return `${yy}-${mm}-${dd}`;
           }
 
           const rawStr = String(raw).trim();
           if (!rawStr) return null;
           
-          // Excel decimal parsing
+          // Excel decimal/serial parsing
           if (/^\d+(\.\d+)?$/.test(rawStr)) {
             const serial = parseFloat(rawStr);
             const offset = serial < 60 ? 25568 : 25569;
             const dateObj = new Date(Math.round((serial - offset) * 86400 * 1000));
             if (!isNaN(dateObj.getTime())) {
-              const yy = dateObj.getFullYear();
-              const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-              const dd = String(dateObj.getDate()).padStart(2, '0');
+              const yy = dateObj.getUTCFullYear();
+              const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+              const dd = String(dateObj.getUTCDate()).padStart(2, '0');
               return `${yy}-${mm}-${dd}`;
             }
           }
@@ -350,9 +402,9 @@ export default function PortalReportModule({
           if (/[a-zA-Z]/.test(rawStr)) {
              const d = new Date(rawStr);
              if (!isNaN(d.getTime())) {
-               const yy = d.getFullYear();
-               const mm = String(d.getMonth() + 1).padStart(2, '0');
-               const dd = String(d.getDate()).padStart(2, '0');
+               const yy = d.getUTCFullYear();
+               const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+               const dd = String(d.getUTCDate()).padStart(2, '0');
                return `${yy}-${mm}-${dd}`;
              }
           }
@@ -391,9 +443,9 @@ export default function PortalReportModule({
 
           const d = new Date(rawStr);
           if (!isNaN(d.getTime())) {
-            const yy = d.getFullYear();
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
+            const yy = d.getUTCFullYear();
+            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const dd = String(d.getUTCDate()).padStart(2, '0');
             return `${yy}-${mm}-${dd}`;
           }
           return null;
@@ -1119,7 +1171,13 @@ export default function PortalReportModule({
   const formatDisplayDate = (dateStr: string) => {
     const parts = dateStr.split("-");
     if (parts.length === 3) {
-      return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+      const day = parseInt(parts[2], 10);
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      const year = parts[0];
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthName = months[monthIdx] || parts[1];
+      const formattedDay = day < 10 ? "0" + day : String(day);
+      return `${formattedDay} ${monthName} ${year}`;
     }
     return dateStr;
   };
@@ -1928,17 +1986,109 @@ export default function PortalReportModule({
       {/* TABLE DATA-WISE WEEKLY SUMMARY */}
       <div className="bg-white border border-slate-205 rounded-2xl shadow-xs overflow-hidden" id="portal-table-container">
         {/* Table Title Bar */}
-        <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center justify-between">
-          <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700 font-display">
-            Date Wise Weekly Summary
-          </span>
+        <div className="p-4 bg-slate-50 border-b border-slate-150 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700 font-display">
+              {isSimpleView ? "Focused Leads Status List" : "Date Wise Weekly Summary"}
+            </span>
+            <button
+              onClick={() => setIsSimpleView(!isSimpleView)}
+              className={`text-[11px] font-extrabold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all shadow-2xs select-none ${
+                isSimpleView
+                  ? "bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 animate-pulse"
+                  : "bg-white hover:bg-slate-50 text-slate-700 border-slate-205 hover:border-slate-300"
+              }`}
+              type="button"
+              id="simple-view-toggle"
+            >
+              <TableProperties size={13} className={isSimpleView ? "text-indigo-100" : "text-slate-400"} />
+              <span>{isSimpleView ? "Simple View" : "Full Matrix View"}</span>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono ${
+                isSimpleView ? "bg-indigo-500/30 text-white" : "bg-slate-100 text-slate-500"
+              }`}>
+                {isSimpleView ? "On" : "Off"}
+              </span>
+            </button>
+          </div>
           <span className="text-[10px] text-slate-400 font-bold font-mono">
-            Leads and SVC by portal with weekly total rows
+            {isSimpleView ? "Basic portal contact leads data (Date, Name, Platform Source, Current CRM Status)" : "Leads and SVC by portal with weekly total rows"}
           </span>
         </div>
 
         <div className="overflow-x-auto">
-          {sortedPivotedRows.length === 0 ? (
+          {isSimpleView ? (
+            filteredLeads.length === 0 ? (
+              <div className="p-16 text-center text-slate-400 text-xs font-semibold">
+                No matching portal leads found for current filters (Month: {getMonthName(filterMonth)}). Please upload leads in the Leads tab.
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse border-spacing-0 min-w-[800px] text-xs">
+                <thead>
+                  <tr className="text-[11px] text-slate-805 font-extrabold uppercase select-none border-b border-slate-150 bg-slate-50/70">
+                    <th className="p-3 border-r border-slate-150 w-[140px] bg-slate-50 text-slate-800 text-center">Date</th>
+                    <th className="p-3 border-r border-slate-150 bg-slate-50 text-slate-800">Lead Name</th>
+                    <th className="p-3 border-r border-slate-150 w-[180px] bg-slate-50 text-slate-800">Source</th>
+                    <th className="p-3 w-[150px] bg-slate-50 text-slate-800 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-150 font-medium text-slate-705">
+                  {filteredLeads.map((lead) => {
+                    const lSource = lead.portalSource || lead.platform || "Housing";
+                    let sourceBg = "bg-blue-50 text-blue-700 border-blue-200/50";
+                    if (lSource === "Housing") sourceBg = "bg-amber-50 text-amber-800 border-amber-250/60";
+                    else if (lSource === "99 Acres") sourceBg = "bg-yellow-50 text-yellow-850 border-yellow-250/65";
+                    else if (lSource === "Magicbricks") sourceBg = "bg-orange-50 text-orange-850 border-orange-250/60";
+                    else if (lSource === "Roof&floor" || lSource === "Roof & Floor") sourceBg = "bg-rose-50 text-rose-800 border-rose-200/60";
+
+                    let statusBg = "bg-slate-50 text-slate-750 border-slate-200";
+                    if (lead.status === "New") statusBg = "bg-blue-50 text-blue-700 border-blue-200";
+                    else if (lead.status === "Contacted") statusBg = "bg-amber-50 text-amber-700 border-amber-200";
+                    else if (lead.status === "Negotiating") statusBg = "bg-purple-50 text-purple-700 border-purple-200";
+                    else if (lead.status === "Closed Won") statusBg = "bg-emerald-50 text-emerald-700 border-emerald-250";
+                    else if (lead.status === "Closed Lost") statusBg = "bg-rose-50 text-rose-600 border-rose-150";
+
+                    return (
+                      <tr key={lead.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-150">
+                        {/* 1. Date */}
+                        <td className="p-3 border-r border-slate-150 font-mono text-center text-slate-650 font-bold whitespace-nowrap">
+                          {formatLeadDate(lead.createdAt)}
+                        </td>
+
+                        {/* 2. Lead Name with metadata */}
+                        <td className="p-3 border-r border-slate-150">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-bold text-slate-800 text-sm">{lead.leadName}</span>
+                            <div className="flex flex-wrap items-center gap-x-2 text-[10px] text-slate-450 font-semibold font-mono">
+                              {lead.email && <span className="flex items-center gap-0.5"><Mail size={10} />{lead.email}</span>}
+                              {lead.phone && <span className="flex items-center gap-0.5"><Phone size={10} />{lead.phone}</span>}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 3. Source Pill/Badge */}
+                        <td className="p-3 border-r border-slate-150">
+                          <div className="flex">
+                            <span className={`text-[10px] uppercase tracking-wider font-extrabold px-2.5 py-1 rounded-full border ${sourceBg}`}>
+                              {lSource}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* 4. Status Pill */}
+                        <td className="p-3 text-center">
+                          <div className="inline-flex">
+                            <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${statusBg}`}>
+                              {lead.status}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )
+          ) : sortedPivotedRows.length === 0 ? (
             <div className="p-16 text-center text-slate-400 text-xs font-semibold">
               No matching portal performance chronologies found for selected filters.
             </div>
