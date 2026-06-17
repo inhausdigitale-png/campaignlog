@@ -31,6 +31,7 @@ import {
   CheckCircle2,
   Activity,
   Sliders,
+  Eye,
 } from "lucide-react";
 
 interface CampaignListProps {
@@ -87,6 +88,7 @@ export default function CampaignList({
   const [editedOnly, setEditedOnly] = useState(false);
   const [simpleViewMode, setSimpleViewMode] = useState(true);
   const [expandedCampaigns, setExpandedCampaigns] = useState<Record<string, boolean>>({});
+  const [inspectingCampaign, setInspectingCampaign] = useState<Campaign | null>(null);
 
   // Ledger Sub-Tab dedicated filters
   const [ledgerSearch, setLedgerSearch] = useState("");
@@ -1178,7 +1180,14 @@ export default function CampaignList({
                       </td>
                       {/* Campaign & Platform */}
                       <td className="p-4 space-y-1.5 whitespace-normal">
-                        <div className="font-bold text-slate-900 text-sm font-display leading-tight">{c.name}</div>
+                        <button
+                          type="button"
+                          onClick={() => setInspectingCampaign(c)}
+                          className="font-bold text-slate-900 text-sm font-display leading-tight hover:text-indigo-600 hover:underline text-left cursor-pointer focus:outline-hidden"
+                          title="Click to view full details without scrolling"
+                        >
+                          {c.name}
+                        </button>
                         {c.objectives && (
                           <p className="text-[10.5px] text-slate-500 line-clamp-2 max-w-[320px] italic">
                             "{c.objectives}"
@@ -1405,6 +1414,14 @@ export default function CampaignList({
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             type="button"
+                            onClick={() => setInspectingCampaign(c)}
+                            className="p-1.5 border border-slate-150 text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-all cursor-pointer"
+                            title="Inspect Campaign Details"
+                          >
+                            <Eye size={11} />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               if (rolePermission.canEditCampaigns) {
                                 handleOpenEditModal(c);
@@ -1572,7 +1589,16 @@ export default function CampaignList({
                   </div>
 
                   {/* Campaign Title */}
-                  <h3 className="text-sm font-bold text-slate-800 line-clamp-1 pb-1">{c.name}</h3>
+                  <h3 className="text-sm font-bold text-slate-800 line-clamp-1 pb-1">
+                    <button
+                      type="button"
+                      onClick={() => setInspectingCampaign(c)}
+                      className="text-left font-bold text-slate-805 text-slate-800 hover:text-indigo-600 hover:underline cursor-pointer focus:outline-hidden"
+                      title="Click to view full details without scrolling"
+                    >
+                      {c.name}
+                    </button>
+                  </h3>
 
                   <p className="text-[11px] text-slate-500 line-clamp-2 min-h-[32px] mt-1 italic">
                     "{c.objectives || "No specific goal objective defined."}"
@@ -1757,6 +1783,14 @@ export default function CampaignList({
 
                 {/* Edit and Delete controls */}
                 <div className="flex items-center gap-2 mt-5 pt-3 border-t border-slate-50">
+                  <button
+                    type="button"
+                    onClick={() => setInspectingCampaign(c)}
+                    className="p-1.5 border border-slate-205 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-slate-50/50 rounded-lg cursor-pointer transition-all shrink-0"
+                    title="Inspect Campaign Details"
+                  >
+                    <Eye size={13} />
+                  </button>
                   <button
                     onClick={() => {
                       if (rolePermission.canEditCampaigns) {
@@ -3345,6 +3379,379 @@ export default function CampaignList({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Campaign Inspection Detail Center Drawer Modal */}
+      {inspectingCampaign && (
+        <div 
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex justify-center items-center md:p-4 z-51 animate-fade-in" 
+          style={{ zIndex: 9000 }}
+          id="campaign-inspect-overlay"
+          onClick={() => setInspectingCampaign(null)}
+        >
+          <div 
+            className="bg-slate-50 w-full max-w-4xl h-full md:h-[90vh] md:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scale-up border border-slate-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="space-y-1 min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-mono tracking-wider font-extrabold text-indigo-400 bg-indigo-950/70 border border-indigo-900 px-2.5 py-0.5 rounded-full uppercase">
+                    {inspectingCampaign.platform}
+                  </span>
+                  <span className={`text-[10px] tracking-wide font-extrabold px-2.5 py-0.5 rounded-full uppercase flex items-center gap-1 ${
+                    inspectingCampaign.status === "active" 
+                      ? "bg-emerald-950/55 text-emerald-400 border border-emerald-900" 
+                      : inspectingCampaign.status === "paused"
+                      ? "bg-amber-950/60 text-amber-400 border border-amber-900"
+                      : "bg-slate-800 text-slate-300 border border-slate-700"
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${inspectingCampaign.status === 'active' ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`} />
+                    {inspectingCampaign.status}
+                  </span>
+                </div>
+                <h2 className="text-base md:text-lg font-bold font-display text-white tracking-tight truncate pr-6" title={inspectingCampaign.name}>
+                  {inspectingCampaign.name}
+                </h2>
+              </div>
+              
+              <button 
+                type="button"
+                onClick={() => setInspectingCampaign(null)}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all cursor-pointer"
+                title="Close Inspection Panel"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body Container with customized scrolling */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin animate-fade-in">
+              
+              {/* Campaign Objective Quote block */}
+              {inspectingCampaign.objectives && (
+                <div className="p-4 bg-indigo-50/40 border border-indigo-100/60 rounded-xl shadow-2xs">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-500 font-display mb-1">Campaign Operational Objective</p>
+                  <p className="text-xs text-slate-700 font-medium italic leading-relaxed">
+                    "{inspectingCampaign.objectives}"
+                  </p>
+                </div>
+              )}
+
+              {/* Core Info & Budget / Spend Bar Row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Panel 1: Campaign Metadata Card */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs space-y-3">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-display border-b border-slate-50 pb-2 flex items-center gap-1.5">
+                    <Sliders size={13} className="text-indigo-500" />
+                    <span>Configuration Parameters</span>
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3 text-xs leading-relaxed">
+                    <div>
+                      <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Designated Manager</span>
+                      <span className="font-semibold text-slate-800 block truncate">{inspectingCampaign.campaignManager || "Not Assigned"}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Creative Ad Type</span>
+                      <span className="font-semibold text-slate-850 block capitalize">{inspectingCampaign.creativeType || "Mixed / Static"}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Ad Set Group Targeting</span>
+                      <span className="font-semibold text-slate-800 block truncate">{inspectingCampaign.adset || "Default Audience"}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Schedule Duration Range</span>
+                      <span className="font-mono text-[11px] text-slate-705 block font-semibold flex items-center gap-1 mt-0.5">
+                        <Calendar size={12} className="text-slate-450 shrink-0" />
+                        <span>{inspectingCampaign.startDate || "N/A"}</span>
+                        <span className="text-slate-400">to</span>
+                        <span>{inspectingCampaign.endDate || "N/A"}</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Panel 2: Live Spend Progress Bar */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-display border-b border-slate-50 pb-2 flex items-center gap-1.5 justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <IndianRupee size={12} className="text-emerald-600" />
+                        <span>Financial Budget Allocation</span>
+                      </span>
+                      <span className="font-mono text-slate-500 lowercase">
+                        {inspectingCampaign.budget > 0 ? Math.round((inspectingCampaign.spend / inspectingCampaign.budget) * 100) : 0}% utilized
+                      </span>
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3 text-xs leading-relaxed mt-3">
+                      <div>
+                        <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Allocated Budget</span>
+                        <span className="font-mono font-bold text-slate-900 text-sm block">{formatINR(inspectingCampaign.budget)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Actual Amount Spent</span>
+                        <span className="font-mono font-extrabold text-emerald-700 text-sm block">{formatINR(inspectingCampaign.spend)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-205">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          inspectingCampaign.spend > inspectingCampaign.budget 
+                            ? "bg-red-500" 
+                            : "bg-indigo-600"
+                        }`}
+                        style={{ width: `${inspectingCampaign.budget > 0 ? Math.min((inspectingCampaign.spend / inspectingCampaign.budget) * 100, 100) : 0}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1.5 font-semibold">
+                      <span>Spent: {formatINR(inspectingCampaign.spend)}</span>
+                      <span>Budget: {formatINR(inspectingCampaign.budget)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Comprehensive KPI Performance Metrics Scorecard Grid */}
+              <div className="space-y-3">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-display flex items-center gap-1.5">
+                  <TrendingUp size={13} className="text-indigo-500" />
+                  <span>End-to-End Performance Analytics Node</span>
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {/* Impressions block */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-center">
+                    <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Impressions</span>
+                    <span className="font-mono font-extrabold text-slate-800 text-sm block mt-1">
+                      {inspectingCampaign.impressions.toLocaleString()}
+                    </span>
+                  </div>
+
+                  {/* Clicks */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-center">
+                    <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Clicks (CTR)</span>
+                    <span className="font-mono font-extrabold text-slate-800 text-sm block mt-1">
+                      {inspectingCampaign.clicks.toLocaleString()}
+                    </span>
+                    <span className="text-[9px] text-slate-405 text-slate-500 font-semibold block mt-0.5">
+                      ({(inspectingCampaign.impressions > 0 ? ((inspectingCampaign.clicks / inspectingCampaign.impressions) * 100).toFixed(2) : "0.00")}%)
+                    </span>
+                  </div>
+
+                  {/* Leads conversions */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-center">
+                    <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Actual Leads</span>
+                    <span className="font-mono font-extrabold text-slate-900 text-sm block mt-1">
+                      {((inspectingCampaign.leads ?? inspectingCampaign.conversions ?? 0)).toLocaleString()}
+                    </span>
+                  </div>
+
+                  {/* Cost per Lead */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-center">
+                    <span className="text-[9.5px] text-slate-400 block font-bold uppercase">Cost per Lead (CPL)</span>
+                    <span className="font-mono font-bold text-slate-800 text-sm block mt-1">
+                      {formatINR(
+                        inspectingCampaign.cpl !== undefined 
+                          ? inspectingCampaign.cpl 
+                          : (((inspectingCampaign.leads ?? inspectingCampaign.conversions ?? 0)) > 0 
+                            ? (inspectingCampaign.spend / ((inspectingCampaign.leads ?? inspectingCampaign.conversions ?? 0))) 
+                            : 0)
+                      )}
+                    </span>
+                    <span className="text-[8px] text-indigo-505 font-extrabold uppercase block mt-0.5">
+                      {inspectingCampaign.cpl !== undefined ? "Manual CPL Set" : "Dynamic Calculated"}
+                    </span>
+                  </div>
+
+                  {/* Service Booking walk CTR */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-center">
+                    <span className="text-[9.5px] text-slate-400 block font-bold uppercase">SVC Bookings</span>
+                    <span className="font-mono font-extrabold text-indigo-600 text-sm block mt-1">
+                      {(inspectingCampaign.svcBooking ?? 0).toLocaleString()}
+                    </span>
+                    <span className="text-[9px] text-slate-405 text-slate-500 font-semibold block mt-0.5" title="SVC booking to Leads ratio">
+                      ({(((inspectingCampaign.leads ?? inspectingCampaign.conversions ?? 0)) > 0 
+                        ? ((inspectingCampaign.svcBooking ?? 0) / ((inspectingCampaign.leads ?? inspectingCampaign.conversions ?? 0))) * 100 
+                        : 0).toFixed(1)}%)
+                    </span>
+                  </div>
+
+                  {/* Estimated ROAS */}
+                  <div className="bg-indigo-50/50 border border-indigo-150 rounded-xl p-3 shadow-3xs text-center">
+                    <span className="text-[9.5px] text-indigo-550 block font-extrabold uppercase">Return (ROAS)</span>
+                    <span className="font-mono font-black text-indigo-700 text-base block mt-1">
+                      {(() => {
+                        const leads = inspectingCampaign.leads ?? inspectingCampaign.conversions ?? 0;
+                        return inspectingCampaign.spend > 0 
+                          ? `${((leads * 12000) / inspectingCampaign.spend).toFixed(1)}x` 
+                          : "0.0x";
+                      })()}
+                    </span>
+                    <span className="text-[8.5px] text-slate-500 font-bold block mt-0.5">@ ₹12k / Lead</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Collateral Segment Dividers: Associated Creatives & History Logs Panel */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
+                
+                {/* LEFT BLOCK: Associated Marketing Creatives */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-display border-b border-slate-50 pb-2 mb-3 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <span>🖼️ Brand Creative Collaterals</span>
+                      </span>
+                      <span className="text-[10px] font-normal text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full font-mono font-bold">
+                        {creatives.filter(cr => cr.campaignId === inspectingCampaign.id).length} assets
+                      </span>
+                    </h4>
+
+                    {(() => {
+                      const list = creatives.filter(cr => cr.campaignId === inspectingCampaign.id);
+                      if (list.length === 0) {
+                        return (
+                          <div className="p-8 text-center bg-slate-50 border border-slate-150 border-dashed rounded-lg my-2">
+                            <Layers size={24} className="text-slate-300 mx-auto mb-1.5" />
+                            <p className="text-[11px] font-bold text-slate-700">No creative assets linked yet</p>
+                            <p className="text-[9.5px] text-slate-500 max-w-xs mx-auto mt-0.5 font-sans">Assign asset blocks to this node in the Creative Analytics section.</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3.5 max-h-[300px] overflow-y-auto scrollbar-thin divide-y divide-slate-100">
+                          {list.map((cr, i) => {
+                            const crCtr = cr.spend > 0 ? ((cr.clicks / cr.spend) * 105).toFixed(2) : "0.00"; // calculated CTR estimation
+                            return (
+                              <div key={cr.id} className="flex gap-3 items-start pt-3 pr-1 first:pt-0">
+                                <div className="w-12 h-12 bg-slate-100 rounded border border-slate-200 shrink-0 relative overflow-hidden group">
+                                  <img 
+                                    src={cr.imageUrl} 
+                                    alt={cr.name} 
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-all" 
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="font-bold text-slate-800 truncate block text-xs" title={cr.name}>{cr.name}</span>
+                                    {i === 0 && (
+                                      <span className="text-[8px] bg-indigo-50 text-indigo-705 border border-indigo-150 px-1 rounded font-extrabold font-sans uppercase shrink-0">Priority</span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 block truncate mt-0.5 leading-none font-medium">
+                                    "{cr.headline}"
+                                  </p>
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[9.5px] font-mono text-slate-500 font-medium bg-slate-50 p-1.5 rounded border border-slate-150/50">
+                                    <span className="font-bold text-slate-600 font-sans">Spend:</span> <span className="font-semibold text-slate-800">{formatINR(cr.spend)}</span>
+                                    <span className="text-slate-300">•</span>
+                                    <span className="font-bold text-slate-600 font-sans">Clicks:</span> <span className="font-semibold text-slate-800">{cr.clicks}</span>
+                                    <span className="text-slate-300">•</span>
+                                    <span className="font-bold text-slate-600 font-sans">Conv:</span> <span className="font-semibold text-slate-800">{cr.conversions}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* RIGHT BLOCK: Campaigns Update Chronology ledger */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 font-display border-b border-slate-50 pb-2 mb-3 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <span>🔧 Campaign Audit Ledger Timeline</span>
+                      </span>
+                      <span className="text-[10px] font-normal text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full font-mono font-bold">
+                        {changeLogs.filter(log => log.campaignId === inspectingCampaign.id).length} logs
+                      </span>
+                    </h4>
+
+                    {(() => {
+                      const logs = changeLogs
+                        .filter(log => log.campaignId === inspectingCampaign.id)
+                        .sort((a, b) => {
+                          const dA = a.lastEditedAt ? new Date(a.lastEditedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : (a.date ? new Date(a.date).getTime() : 0));
+                          const dB = b.lastEditedAt ? new Date(b.lastEditedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : (b.date ? new Date(b.date).getTime() : 0));
+                          return dB - dA;
+                        });
+
+                      if (logs.length === 0) {
+                        return (
+                          <div className="p-8 text-center bg-slate-50 border border-slate-150 border-dashed rounded-lg my-2">
+                            <Activity size={24} className="text-slate-300 mx-auto mb-1.5" />
+                            <p className="text-[11px] font-bold text-slate-705">No modifications logged yet</p>
+                            <p className="text-[9.50px] text-slate-500 max-w-xs mx-auto mt-0.5 font-sans">Campaign is running initial raw deployment statistics pristine.</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3.5 max-h-[300px] overflow-y-auto scrollbar-thin pl-1 pr-1 font-sans">
+                          {logs.map((log) => {
+                            const showCategory = log.changeCategory || "Audit Edit";
+                            return (
+                              <div key={log.id} className="relative pl-4 border-l border-slate-200 pb-3 last:pb-1 text-xs">
+                                <span className={`absolute left-[-5.5px] top-1.5 w-2.5 h-2.5 rounded-full ${
+                                  showCategory === 'Budget' ? 'bg-indigo-500' : showCategory === 'Creative' ? 'bg-amber-500' : 'bg-slate-400'
+                                }`} />
+                                <div className="flex items-center justify-between gap-1 mb-1 font-semibold">
+                                  <span className="text-[9px] bg-slate-100 px-2 py-0.2 rounded font-extrabold uppercase font-sans tracking-wide">
+                                    {showCategory}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    {log.lastEditedAt ? new Date(log.lastEditedAt).toLocaleDateString() : (log.createdAt ? new Date(log.createdAt).toLocaleDateString() : log.date)}
+                                  </span>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="font-bold text-slate-800 leading-normal">{log.changed}</p>
+                                  {log.reason && (
+                                    <p className="text-slate-500 italic text-[10.5px] leading-relaxed pl-1.5 border-l border-slate-200 font-medium font-sans">
+                                      "Reason: {log.reason}"
+                                    </p>
+                                  )}
+                                  {log.lastEditedBy && (
+                                    <div className="text-[9px] text-slate-400 font-mono mt-1 font-semibold flex items-center justify-between">
+                                      <span>By manager: <span className="text-slate-600 font-bold">{log.lastEditedBy}</span></span>
+                                      {log.progress && (
+                                        <span className="text-indigo-600 font-extrabold uppercase tracking-widest text-[8px]">{log.progress}</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Modal Bottom control panel */}
+            <div className="bg-slate-100 border-t border-slate-200 px-5 py-3.5 flex justify-end gap-3 rounded-b-2xl shrink-0">
+              <button 
+                type="button"
+                onClick={() => setInspectingCampaign(null)}
+                className="px-5 py-2 cursor-pointer bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition-all shadow-3xs"
+              >
+                Go Back / Close Details
+              </button>
+            </div>
           </div>
         </div>
       )}
