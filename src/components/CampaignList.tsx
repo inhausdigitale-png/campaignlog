@@ -85,6 +85,8 @@ export default function CampaignList({
   const [endDateFilter, setEndDateFilter] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [editedOnly, setEditedOnly] = useState(false);
+  const [simpleViewMode, setSimpleViewMode] = useState(true);
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Record<string, boolean>>({});
 
   // Ledger Sub-Tab dedicated filters
   const [ledgerSearch, setLedgerSearch] = useState("");
@@ -748,6 +750,34 @@ export default function CampaignList({
             </button>
           </div>
 
+          {/* Layout Mode Segment Switcher */}
+          <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200" id="layout-mode-selector">
+            <button
+              type="button"
+              onClick={() => setSimpleViewMode(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-xs font-bold font-display cursor-pointer ${
+                simpleViewMode
+                  ? "bg-white text-indigo-705 text-indigo-650 shadow-xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+              title="Compact and simple view with expandable update details"
+            >
+              <span>Simple View</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSimpleViewMode(false)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-xs font-bold font-display cursor-pointer ${
+                !simpleViewMode
+                  ? "bg-white text-indigo-705 text-indigo-650 shadow-xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+              title="Detailed view showing all updates and creatives permanently inline"
+            >
+              <span>Detailed View</span>
+            </button>
+          </div>
+
           {/* View Mode Segment Switcher */}
           <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200" id="view-mode-selector">
             <button
@@ -1185,78 +1215,118 @@ export default function CampaignList({
                             )}
                           </div>
                         )}
-                        
-                        {/* Display change log audit details */}
-                        {latestLog && (
-                          <div className="mt-2.5 p-2.5 bg-amber-50/80 border border-amber-200/60 rounded-lg text-[10px] text-slate-700 leading-normal max-w-[325px] shadow-3xs space-y-1">
-                            <div className="flex items-center justify-between text-amber-800 text-[9.5px] font-black uppercase tracking-wider border-b border-amber-200/40 pb-1">
-                              <span className="flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                                🔧 Active Updated Campaign
-                              </span>
-                              <span className="text-[8px] bg-amber-200/60 text-amber-900 px-1 py-0.2 rounded font-mono font-bold">
-                                {latestLog.changeCategory || "Audit Edit"}
-                              </span>
-                            </div>
-                            <div className="space-y-1 mt-1 text-[10.5px]">
-                              <div>
-                                <span className="font-extrabold text-amber-900">Latest Update: </span>
-                                <span className="font-semibold text-slate-800">{latestLog.changed}</span>
-                              </div>
-                              <div>
-                                <span className="font-extrabold text-amber-900">Reason for Edit: </span>
-                                <span className="italic text-slate-650 font-medium">{latestLog.reason}</span>
-                              </div>
-                              <div className="text-[9px] text-slate-500 font-mono pt-1 flex justify-between items-center border-t border-amber-100/40 mt-1">
-                                <span className="font-medium text-slate-500">
-                                  Last Updated: <span className="font-semibold text-slate-700">{latestLog.lastEditedAt ? new Date(latestLog.lastEditedAt).toLocaleString() : latestLog.date}</span>
-                                </span>
-                                {latestLog.lastEditedBy && (
-                                  <span className="font-semibold text-slate-650">By: {latestLog.lastEditedBy}</span>
-                                )}
-                              </div>
-                            </div>
+
+                        {/* Compact Trigger chips if simpleViewMode is active */}
+                        {simpleViewMode && (latestLog || campCreatives.length > 0) && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                            {latestLog && (
+                              <button
+                                type="button"
+                                onClick={() => setExpandedCampaigns((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}
+                                className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-md transition-all cursor-pointer shadow-3xs border ${
+                                  expandedCampaigns[c.id]
+                                    ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-sm"
+                                    : "bg-amber-50/60 text-amber-805 border-amber-200/70 hover:bg-amber-100/50"
+                                }`}
+                                title="Click to toggle audit changelog and updates"
+                              >
+                                <span>🔧 Audit Log</span>
+                                <span className="text-[7.5px] opacity-70">{expandedCampaigns[c.id] ? "▲" : "▼"}</span>
+                              </button>
+                            )}
+                            {campCreatives.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setExpandedCampaigns((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}
+                                className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-md transition-all cursor-pointer shadow-3xs border ${
+                                  expandedCampaigns[c.id]
+                                    ? "bg-indigo-100 text-indigo-900 border-indigo-300 font-extrabold shadow-sm"
+                                    : "bg-indigo-50/50 text-indigo-750 border-indigo-150 hover:bg-indigo-100/45"
+                                }`}
+                                title="Click to toggle associated creative assets performance"
+                              >
+                                <span>🖼️ {campCreatives.length} Creatives</span>
+                                <span className="text-[7.5px] opacity-70">{expandedCampaigns[c.id] ? "▲" : "▼"}</span>
+                              </button>
+                            )}
                           </div>
                         )}
 
-                        {/* Display associated creatives performance if present */}
-                        {campCreatives.length > 0 && (
-                          <div className="mt-2.5 p-2 bg-slate-50 border border-slate-200/70 rounded-xl text-[10.5px] max-w-[320px] space-y-2">
-                            <div className="flex items-center justify-between text-[10px] font-bold text-indigo-650 font-display">
-                              <span>🖼️ Associated Creatives ({campCreatives.length})</span>
-                            </div>
-                            <div className="space-y-2 max-h-[150px] overflow-y-auto scrollbar-thin divide-y divide-slate-100">
-                              {[...campCreatives].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).map((cr, idx) => {
-                                const crCtr = cr.spend > 0 ? ((cr.clicks / cr.spend) * 100).toFixed(2) : "0.00";
-                                const isLatestUploaded = idx === 0;
-                                return (
-                                  <div key={cr.id} className="flex gap-2 items-start pt-1.5 first:pt-0">
-                                    <div className="w-9 h-9 bg-slate-100 rounded overflow-hidden border border-slate-200 shrink-0 relative">
-                                      <img 
-                                        src={cr.imageUrl} 
-                                        alt={cr.name} 
-                                        className="w-full h-full object-cover" 
-                                        referrerPolicy="no-referrer"
-                                      />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        <span className="font-bold text-slate-800 truncate block max-w-[150px]" title={cr.name}>{cr.name}</span>
-                                        {isLatestUploaded && (
-                                          <span className="text-[7.5px] bg-indigo-50 text-indigo-705 border border-indigo-150 px-1 py-0 rounded font-extrabold font-sans uppercase shrink-0">Latest</span>
-                                        )}
-                                      </div>
-                                      <p className="text-[9px] text-slate-500 block truncate mt-0.5 leading-none">
-                                        "{cr.headline}"
-                                      </p>
-                                      <p className="text-[9px] text-slate-505 font-mono mt-0.5 font-semibold">
-                                        Sp: {formatINR(cr.spend)} • Cl: {cr.clicks} ({crCtr}%) • Co: {cr.conversions}
-                                      </p>
-                                    </div>
+                        {/* Display change log audit details when expanded or in detailed view */}
+                        {(!simpleViewMode || expandedCampaigns[c.id]) && (
+                          <div className="mt-2.5 space-y-2 animate-fade-in">
+                            {latestLog && (
+                              <div className="p-2.5 bg-amber-50/80 border border-amber-200/60 rounded-lg text-[10px] text-slate-700 leading-normal max-w-[325px] shadow-3xs space-y-1">
+                                <div className="flex items-center justify-between text-amber-800 text-[9.5px] font-black uppercase tracking-wider border-b border-amber-200/40 pb-1">
+                                  <span className="flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                    🔧 Active Updated Campaign
+                                  </span>
+                                  <span className="text-[8px] bg-amber-200/60 text-amber-900 px-1 py-0.2 rounded font-mono font-bold">
+                                    {latestLog.changeCategory || "Audit Edit"}
+                                  </span>
+                                </div>
+                                <div className="space-y-1 mt-1 text-[10.5px]">
+                                  <div>
+                                    <span className="font-extrabold text-amber-900">Latest Update: </span>
+                                    <span className="font-semibold text-slate-800">{latestLog.changed}</span>
                                   </div>
-                                );
-                              })}
-                            </div>
+                                  <div>
+                                    <span className="font-extrabold text-amber-900">Reason for Edit: </span>
+                                    <span className="italic text-slate-650 font-medium">{latestLog.reason}</span>
+                                  </div>
+                                  <div className="text-[9px] text-slate-500 font-mono pt-1 flex justify-between items-center border-t border-amber-100/40 mt-1">
+                                    <span className="font-medium text-slate-500">
+                                      Last Updated: <span className="font-semibold text-slate-700">{latestLog.lastEditedAt ? new Date(latestLog.lastEditedAt).toLocaleString() : latestLog.date}</span>
+                                    </span>
+                                    {latestLog.lastEditedBy && (
+                                      <span className="font-semibold text-slate-650">By: {latestLog.lastEditedBy}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Display associated creatives performance if present */}
+                            {campCreatives.length > 0 && (
+                              <div className="p-2 bg-slate-50 border border-slate-200/70 rounded-xl text-[10.5px] max-w-[320px] space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-bold text-indigo-650 font-display">
+                                  <span>🖼️ Associated Creatives ({campCreatives.length})</span>
+                                </div>
+                                <div className="space-y-2 max-h-[150px] overflow-y-auto scrollbar-thin divide-y divide-slate-100">
+                                  {[...campCreatives].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).map((cr, idx) => {
+                                    const crCtr = cr.spend > 0 ? ((cr.clicks / cr.spend) * 100).toFixed(2) : "0.00";
+                                    const isLatestUploaded = idx === 0;
+                                    return (
+                                      <div key={cr.id} className="flex gap-2 items-start pt-1.5 first:pt-0">
+                                        <div className="w-9 h-9 bg-slate-100 rounded overflow-hidden border border-slate-200 shrink-0 relative">
+                                          <img 
+                                            src={cr.imageUrl} 
+                                            alt={cr.name} 
+                                            className="w-full h-full object-cover" 
+                                            referrerPolicy="no-referrer"
+                                          />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-1 flex-wrap">
+                                            <span className="font-bold text-slate-800 truncate block max-w-[150px]" title={cr.name}>{cr.name}</span>
+                                            {isLatestUploaded && (
+                                              <span className="text-[7.5px] bg-indigo-50 text-indigo-705 border border-indigo-150 px-1 py-0 rounded font-extrabold font-sans uppercase shrink-0">Latest</span>
+                                            )}
+                                          </div>
+                                          <p className="text-[9px] text-slate-500 block truncate mt-0.5 leading-none">
+                                            "{cr.headline}"
+                                          </p>
+                                          <p className="text-[9px] text-slate-550 font-mono mt-0.5 font-semibold">
+                                            Sp: {formatINR(cr.spend)} • Cl: {cr.clicks} ({crCtr}%) • Co: {cr.conversions}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </td>
@@ -1570,77 +1640,117 @@ export default function CampaignList({
                     </div>
                   </div>
 
-                  {/* Display change log audit details */}
-                  {latestLog && (
-                    <div className="mt-3 p-2.5 bg-amber-50/80 border border-amber-200/60 rounded-lg text-[10px] text-slate-700 leading-normal shadow-3xs space-y-1">
-                      <div className="flex items-center justify-between text-amber-800 text-[9.5px] font-black uppercase tracking-wider border-b border-amber-200/40 pb-1">
-                        <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                          🔧 Active Updated Campaign
-                        </span>
-                        <span className="text-[8px] bg-amber-200/60 text-amber-900 px-1 py-0.2 rounded font-mono font-bold">
-                          {latestLog.changeCategory || "Audit Edit"}
-                        </span>
-                      </div>
-                      <div className="space-y-1 mt-1 text-[10.5px]">
-                        <div>
-                          <span className="font-extrabold text-amber-900">Latest Update: </span>
-                          <span className="font-semibold text-slate-800">{latestLog.changed}</span>
-                        </div>
-                        <div>
-                          <span className="font-extrabold text-amber-900">Reason for Edit: </span>
-                          <span className="italic text-slate-650 font-medium">{latestLog.reason}</span>
-                        </div>
-                        <div className="text-[9px] text-slate-500 font-mono pt-1 flex justify-between items-center border-t border-amber-100/40 mt-1 font-semibold">
-                          <span className="font-medium text-slate-500">
-                            Last Updated: <span className="font-semibold text-slate-700">{latestLog.lastEditedAt ? new Date(latestLog.lastEditedAt).toLocaleString() : latestLog.date}</span>
-                          </span>
-                          {latestLog.lastEditedBy && (
-                            <span className="font-semibold text-slate-650">By: {latestLog.lastEditedBy}</span>
-                          )}
-                        </div>
-                      </div>
+                  {/* Compact Trigger chips if simpleViewMode is active */}
+                  {simpleViewMode && (latestLog || campCreatives.length > 0) && (
+                    <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                      {latestLog && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCampaigns((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}
+                          className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-md transition-all cursor-pointer shadow-3xs border ${
+                            expandedCampaigns[c.id]
+                              ? "bg-amber-100 text-amber-900 border-amber-300 font-extrabold shadow-sm"
+                              : "bg-amber-50/60 text-amber-805 border-amber-200/70 hover:bg-amber-100/50"
+                          }`}
+                          title="Click to toggle audit changelog and updates"
+                        >
+                          <span>🔧 Audit Log</span>
+                          <span className="text-[7.5px] opacity-70">{expandedCampaigns[c.id] ? "▲" : "▼"}</span>
+                        </button>
+                      )}
+                      {campCreatives.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCampaigns((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}
+                          className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-md transition-all cursor-pointer shadow-3xs border ${
+                            expandedCampaigns[c.id]
+                              ? "bg-indigo-100 text-indigo-900 border-indigo-300 font-extrabold shadow-sm"
+                              : "bg-indigo-50/50 text-indigo-750 border-indigo-150 hover:bg-indigo-100/45"
+                          }`}
+                          title="Click to toggle associated creative assets performance"
+                        >
+                          <span>🖼️ {campCreatives.length} Creatives</span>
+                          <span className="text-[7.5px] opacity-70">{expandedCampaigns[c.id] ? "▲" : "▼"}</span>
+                        </button>
+                      )}
                     </div>
                   )}
 
-                  {/* Display associated creatives performance if present */}
-                  {campCreatives.length > 0 && (
-                    <div className="mt-3 p-3 bg-slate-50 border border-slate-200/70 rounded-xl text-[10.5px] space-y-2">
-                      <div className="flex items-center justify-between text-[10.5px] font-bold text-indigo-755 text-indigo-650 font-display">
-                        <span>🖼️ Associated Creatives ({campCreatives.length})</span>
-                      </div>
-                      <div className="space-y-2.5 max-h-[175px] overflow-y-auto scrollbar-thin divide-y divide-slate-100">
-                        {[...campCreatives].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).map((cr, idx) => {
-                          const crCtr = cr.spend > 0 ? ((cr.clicks / cr.spend) * 100).toFixed(2) : "0.00";
-                          const isLatestUploaded = idx === 0;
-                          return (
-                            <div key={cr.id} className="flex gap-2.5 items-start pt-2 first:pt-0">
-                              <div className="w-11 h-11 bg-slate-100 rounded overflow-hidden border border-slate-200 shrink-0 relative">
-                                <img 
-                                  src={cr.imageUrl} 
-                                  alt={cr.name} 
-                                  className="w-full h-full object-cover" 
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-bold text-slate-800 truncate block max-w-[140px]" title={cr.name}>{cr.name}</span>
-                                  {isLatestUploaded && (
-                                    <span className="text-[8.5px] bg-indigo-50 text-indigo-705 border border-indigo-150 px-1 py-0.2 rounded font-extrabold font-sans uppercase shrink-0">Latest</span>
-                                  )}
-                                </div>
-                                <p className="text-[9.5px] text-slate-500 block truncate mt-0.5 font-sans leading-none">
-                                  "{cr.headline}"
-                                </p>
-                                <p className="text-[9.5px] text-slate-505 font-mono mt-1 font-semibold">
-                                  Spend: ${cr.spend} • Clicks: {cr.clicks} ({crCtr}%) • Conv: {cr.conversions}
-                                </p>
-                              </div>
+                  {/* Display change log audit details when expanded or detailed view active */}
+                  {(!simpleViewMode || expandedCampaigns[c.id]) && (
+                    <div className="mt-3 space-y-3 animate-fade-in">
+                      {latestLog && (
+                        <div className="p-2.5 bg-amber-50/80 border border-amber-200/60 rounded-lg text-[10px] text-slate-700 leading-normal shadow-3xs space-y-1">
+                          <div className="flex items-center justify-between text-amber-800 text-[9.5px] font-black uppercase tracking-wider border-b border-amber-200/40 pb-1">
+                            <span className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                              🔧 Active Updated Campaign
+                            </span>
+                            <span className="text-[8px] bg-amber-200/60 text-amber-900 px-1 py-0.2 rounded font-mono font-bold">
+                              {latestLog.changeCategory || "Audit Edit"}
+                            </span>
+                          </div>
+                          <div className="space-y-1 mt-1 text-[10.5px]">
+                            <div>
+                              <span className="font-extrabold text-amber-900">Latest Update: </span>
+                              <span className="font-semibold text-slate-800">{latestLog.changed}</span>
                             </div>
-                          );
-                        })}
-                      </div>
+                            <div>
+                              <span className="font-extrabold text-amber-900">Reason for Edit: </span>
+                              <span className="italic text-slate-650 font-medium">{latestLog.reason}</span>
+                            </div>
+                            <div className="text-[9px] text-slate-500 font-mono pt-1 flex justify-between items-center border-t border-amber-100/40 mt-1 font-semibold">
+                              <span className="font-medium text-slate-500">
+                                Last Updated: <span className="font-semibold text-slate-700">{latestLog.lastEditedAt ? new Date(latestLog.lastEditedAt).toLocaleString() : latestLog.date}</span>
+                              </span>
+                              {latestLog.lastEditedBy && (
+                                <span className="font-semibold text-slate-650">By: {latestLog.lastEditedBy}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Display associated creatives performance if present */}
+                      {campCreatives.length > 0 && (
+                        <div className="mt-3 p-3 bg-slate-50 border border-slate-200/70 rounded-xl text-[10.5px] space-y-2">
+                          <div className="flex items-center justify-between text-[10.5px] font-bold text-indigo-755 text-indigo-650 font-display">
+                            <span>🖼️ Associated Creatives ({campCreatives.length})</span>
+                          </div>
+                          <div className="space-y-2.5 max-h-[175px] overflow-y-auto scrollbar-thin divide-y divide-slate-100">
+                            {[...campCreatives].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).map((cr, idx) => {
+                              const crCtr = cr.spend > 0 ? ((cr.clicks / cr.spend) * 100).toFixed(2) : "0.00";
+                              const isLatestUploaded = idx === 0;
+                              return (
+                                <div key={cr.id} className="flex gap-2.5 items-start pt-2 first:pt-0">
+                                  <div className="w-11 h-11 bg-slate-100 rounded overflow-hidden border border-slate-200 shrink-0 relative">
+                                    <img 
+                                      src={cr.imageUrl} 
+                                      alt={cr.name} 
+                                      className="w-full h-full object-cover" 
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-bold text-slate-800 truncate block max-w-[140px]" title={cr.name}>{cr.name}</span>
+                                      {isLatestUploaded && (
+                                        <span className="text-[8.5px] bg-indigo-50 text-indigo-705 border border-indigo-150 px-1 py-0.2 rounded font-extrabold font-sans uppercase shrink-0">Latest</span>
+                                      )}
+                                    </div>
+                                    <p className="text-[9.5px] text-slate-500 block truncate mt-0.5 font-sans leading-none">
+                                      "{cr.headline}"
+                                    </p>
+                                    <p className="text-[9.5px] text-slate-505 font-mono mt-1 font-semibold">
+                                      Spend: ${cr.spend} • Clicks: {cr.clicks} ({crCtr}%) • Conv: {cr.conversions}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

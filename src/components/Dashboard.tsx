@@ -15,6 +15,11 @@ import {
   PieChart,
   Pie,
   Cell,
+  LineChart,
+  Line,
+  ScatterChart,
+  Scatter,
+  ZAxis,
 } from "recharts";
 import {
   TrendingUp,
@@ -38,6 +43,8 @@ import {
   CheckCircle2,
   Lock,
   Share2,
+  Compass,
+  Info,
 } from "lucide-react";
 import { dataService } from "../services/dataService";
 import PortalDashboard from "./PortalDashboard";
@@ -62,6 +69,48 @@ export default function Dashboard({
   const [startDateFilter, setStartDateFilter] = useState<string>("");
   const [endDateFilter, setEndDateFilter] = useState<string>("");
   const [dashboardView, setDashboardView] = useState<"digital" | "portal">("digital");
+
+  // Interactive Campaign Charts Analytics States
+  const [activeAnalysisTab, setActiveAnalysisTab] = useState<"channels" | "campaigns" | "efficiency" | "timeSeries">("channels");
+  const [groupedBy, setGroupedBy] = useState<"platform" | "project">("platform");
+  const [primaryMetric, setPrimaryMetric] = useState<"spend" | "conversions" | "clicks" | "budget">("spend");
+  const [secondaryMetric, setSecondaryMetric] = useState<"conversions" | "clicks" | "cpa" | "ctr" | "none">("conversions");
+  const [selectedInspectorCampaignId, setSelectedInspectorCampaignId] = useState<string | null>(null);
+  const [simulatedBudgetChange, setSimulatedBudgetChange] = useState<number>(0); // slider percent change (-50% to +200%)
+
+  // Helper metric translation functions
+  const getMetricLabel = (key: string) => {
+    switch(key) {
+      case "spend": return "Amount Spent (₹)";
+      case "conversions": return "Conversions (Leads)";
+      case "clicks": return "Clicks";
+      case "impressions": return "Impressions";
+      case "budget": return "Planned Budget (₹)";
+      case "cpa": return "Cost per Lead (CPA - ₹)";
+      case "ctr": return "Click Through Rate (% CTR)";
+      case "none": return "None";
+      default: return key;
+    }
+  };
+
+  const getMetricColor = (key: string, isSec?: boolean) => {
+    if (isSec) {
+      switch(key) {
+        case "conversions": return "#10b981"; // Emerald
+        case "clicks": return "#3b82f6"; // Blue
+        case "cpa": return "#f43f5e"; // Rose
+        case "ctr": return "#d97706"; // Amber
+        default: return "#64748b";
+      }
+    }
+    switch(key) {
+      case "spend": return "#6366f1"; // Indigo
+      case "conversions": return "#10b981"; // Emerald
+      case "clicks": return "#06b6d4"; // Cyan
+      case "budget": return "#f59e0b"; // Orange
+      default: return "#4f46e5";
+    }
+  };
 
   const [aiReport, setAiReport] = useState<AIRecommendationReport | null>(null);
 
@@ -185,7 +234,7 @@ export default function Dashboard({
       const response = await fetch("/api/gemini/generate-insights", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaigns }),
+        body: JSON.stringify({ campaigns: mergedCampaigns }),
       });
 
       if (!response.ok) {
@@ -475,7 +524,7 @@ export default function Dashboard({
         </div>
       </div>
 
-      {campaigns.length === 0 ? (
+      {mergedCampaigns.length === 0 ? (
         <div className="p-12 text-center bg-white rounded-xl border border-slate-200 shadow-xs">
           <LayoutDashboard className="mx-auto text-slate-300 mb-3" size={40} />
           <h3 className="text-sm font-bold text-slate-700 font-display">No campaigns declared yet</h3>
@@ -485,76 +534,668 @@ export default function Dashboard({
         </div>
       ) : (
         <>
-          {/* Charts section with Recharts */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Bar chart: spend & conversions */}
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
-              <h3 className="text-xs font-bold font-display text-slate-705 text-slate-800 mb-4 flex items-center gap-2">
-                <span>Multi-Platform Ad Performance (Spend vs. Conversions)</span>
-              </h3>
-              <div className="h-72 w-full text-xs">
-                {platformChartData.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-slate-400">
-                    Not enough transaction histories.
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={platformChartData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="platform" stroke="#94a3b8" fontSize={11} />
-                      <YAxis yAxisId="left" orientation="left" stroke="#4f46e5" fontSize={11} />
-                      <YAxis yAxisId="right" orientation="right" stroke="#94a3b8" fontSize={11} />
-                      <Tooltip formatter={(value) => [`₹${Number(value).toLocaleString("en-IN")}`, ""]} />
-                      <Legend wrapperStyle={{ paddingTop: 10 }} />
-                      <Bar yAxisId="left" dataKey="spend" name="Spend (INR - ₹)" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                      <Bar yAxisId="right" dataKey="conversions" name="Conversions" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
+          {/* Advanced Interactive Campaigns Analytics & Intelligence Centre */}
+          <div className="space-y-6" id="interactive-analytics-desktop">
+            {/* Top Navigation & Config Workspace bar */}
+            <div className="bg-slate-900 text-white rounded-xl p-4.5 border border-slate-800 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4.5">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 text-[9.5px] font-black uppercase text-indigo-400 tracking-wider">
+                  <Flame size={12} className="text-amber-500 animate-pulse animate-bounce" />
+                  Interactive Analytics & Simulation Desk
+                </span>
+                <p className="text-[11px] text-slate-400">
+                  Select a view model below to run real-time metric evaluations or simulate budget relocation scenarios.
+                </p>
+              </div>
+
+              {/* Chart Tab Navigation */}
+              <div className="flex flex-wrap gap-1.5 bg-slate-8ba p-1 rounded-lg border border-slate-800/80 bg-slate-800/60 max-w-max self-start md:self-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveAnalysisTab("channels");
+                    setSimulatedBudgetChange(0);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    activeAnalysisTab === "channels"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-slate-450 text-slate-300 hover:text-white hover:bg-slate-700/50"
+                  }`}
+                >
+                  📊 Channel Grouping
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveAnalysisTab("campaigns");
+                    setSimulatedBudgetChange(0);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    activeAnalysisTab === "campaigns"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-slate-450 text-slate-300 hover:text-white hover:bg-slate-700/50"
+                  }`}
+                >
+                  🏆 Campaigns Leaderboard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveAnalysisTab("efficiency");
+                    setSimulatedBudgetChange(0);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    activeAnalysisTab === "efficiency"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-slate-450 text-slate-300 hover:text-white hover:bg-slate-700/50"
+                  }`}
+                >
+                  🎯 Efficiency Map (CPA)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveAnalysisTab("timeSeries");
+                    setSimulatedBudgetChange(0);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    activeAnalysisTab === "timeSeries"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-slate-450 text-slate-300 hover:text-white hover:bg-slate-700/50"
+                  }`}
+                >
+                  📈 Growth Timeline
+                </button>
               </div>
             </div>
 
-            {/* Pie Chart: Budget Distribution */}
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="text-xs font-bold font-display text-slate-805 text-slate-800 mb-4">
-                Share of Budget by Advertising Network
-              </h3>
-              <div className="h-60 w-full flex items-center justify-center text-xs">
-                {platformChartData.length === 0 ? (
-                  <span className="text-slate-400">No active network budgets.</span>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={platformChartData}
-                        dataKey="budget"
-                        nameKey="platform"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={80}
-                        paddingAngle={3}
-                        label={({ name, percent }) => `${name} (${(percent * 105 / 1.05 * 10 / 1000).toFixed(0)}%)`}
+            {/* Dynamic Controls Drawer and Summary Stats */}
+            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4.5">
+                {/* Channel-Specific toggles */}
+                {activeAnalysisTab === "channels" && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-450 uppercase tracking-wide">Group By:</span>
+                    <div className="inline-flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setGroupedBy("platform")}
+                        className={`px-2.5 py-1 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
+                          groupedBy === "platform"
+                            ? "bg-white text-indigo-750 shadow-3xs"
+                            : "text-slate-500 hover:text-slate-805"
+                        }`}
                       >
-                        {platformChartData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(val) => [`₹${Number(val).toLocaleString("en-IN")}`, "Budget"]} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                        Platforms
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGroupedBy("project")}
+                        className={`px-2.5 py-1 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
+                          groupedBy === "project"
+                            ? "bg-white text-indigo-750 shadow-3xs"
+                            : "text-slate-500 hover:text-slate-805"
+                        }`}
+                      >
+                        Projects
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Primary Metric selection */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-slate-450 uppercase tracking-wide">Primary (Bar):</span>
+                  <select
+                    value={primaryMetric}
+                    onChange={(e) => setPrimaryMetric(e.target.value as any)}
+                    className="text-[11px] font-semibold h-8 px-2.5 bg-slate-55 border border-slate-22 px-2 py-0.5 bg-slate-50 border-slate-200 rounded-lg text-slate-700 cursor-pointer outline-hidden"
+                  >
+                    <option value="spend">Spend (₹)</option>
+                    <option value="conversions">Conversions (Leads)</option>
+                    <option value="clicks">Clicks</option>
+                    <option value="budget">Planned Budget (₹)</option>
+                  </select>
+                </div>
+
+                {/* Secondary Metric selection */}
+                {activeAnalysisTab !== "efficiency" && activeAnalysisTab !== "timeSeries" && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-450 uppercase tracking-wide">Secondary (Line):</span>
+                    <select
+                      value={secondaryMetric}
+                      onChange={(e) => setSecondaryMetric(e.target.value as any)}
+                      className="text-[11px] font-semibold h-8 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 cursor-pointer outline-hidden"
+                    >
+                      <option value="conversions">Conversions (Leads)</option>
+                      <option value="clicks">Clicks</option>
+                      <option value="cpa">CPA (₹ Cost/Lead)</option>
+                      <option value="ctr">CTR (% Click Rate)</option>
+                      <option value="none">None (Single Plot)</option>
+                    </select>
+                  </div>
                 )}
               </div>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 justify-center text-[10px] text-slate-500 font-medium font-mono">
-                {platformChartData.map((entry, idx) => (
-                  <div key={entry.platform} className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                    <span>{entry.platform}: {formatINR(entry.budget)}</span>
-                  </div>
-                ))}
+
+              {/* Micro Status Indicators */}
+              <div className="text-[11px] font-medium font-mono text-slate-500 flex items-center gap-2">
+                <span>Active campaigns in sandbox:</span>
+                <span className="bg-indigo-50 border border-indigo-150 text-indigo-705 px-2 py-0.5 rounded font-black text-xs font-mono">
+                  {filteredCampaigns.length}
+                </span>
               </div>
             </div>
+
+            {/* Main Interactive Grid Layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* Left Canvas Panel: Interactive Charts (col-span-2) */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs lg:col-span-2 space-y-5">
+                
+                {/* Header title */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider font-display shrink-0 flex items-center gap-1.5">
+                      <span>📈 Active Analytics:</span>
+                      <span className="text-indigo-650 text-indigo-600 font-extrabold normal-case font-sans">
+                        {activeAnalysisTab === "channels" 
+                          ? `Performance Channels grouped by ${groupedBy === "platform" ? "Ad Platform" : "Real Estate Projects"}`
+                          : activeAnalysisTab === "campaigns"
+                            ? `Campaign Leaderboarding Matrix (Sorted by ${getMetricLabel(primaryMetric)})`
+                            : activeAnalysisTab === "efficiency"
+                              ? `Efficiency quadrant distribution: leads volume vs Cost Per Lead`
+                              : `Cumulative Digital Marketing Progression Timeline`
+                        }
+                      </span>
+                    </h3>
+                  </div>
+
+                  {activeAnalysisTab !== "efficiency" && activeAnalysisTab !== "timeSeries" && (
+                    <div className="flex items-center gap-3 text-[10px] font-bold font-mono">
+                      <div className="flex items-center gap-1">
+                        <span className="w-2.5 h-2.5 rounded hover:scale-105 transition-all" style={{ backgroundColor: getMetricColor(primaryMetric) }} />
+                        <span className="text-slate-600">{getMetricLabel(primaryMetric)}</span>
+                      </div>
+                      {secondaryMetric !== "none" && (
+                        <div className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded-full hover:scale-105 transition-all" style={{ backgroundColor: getMetricColor(secondaryMetric, true) }} />
+                          <span className="text-slate-600">{getMetricLabel(secondaryMetric)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Main chart viewport container */}
+                <div className="h-80 w-full text-xs">
+                  {filteredCampaigns.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
+                      <Info className="animate-pulse text-indigo-500" size={24} />
+                      <p className="font-semibold">No active campaign metrics fit the designated date/project filters.</p>
+                      <p className="text-[11px] text-slate-400">Please adjust your filters on the dashboard top header.</p>
+                    </div>
+                  ) : activeAnalysisTab === "channels" ? (() => {
+                    // Render Tab 1: Channels
+                    const groupedDataMap = filteredCampaigns.reduce((acc, c) => {
+                      const key = groupedBy === "platform" ? c.platform : getProjectName(c);
+                      if (!acc[key]) {
+                        acc[key] = { name: key, spend: 0, conversions: 0, clicks: 0, budget: 0, impressions: 0 };
+                      }
+                      acc[key].spend += Number(c.spend) || 0;
+                      acc[key].conversions += Number(c.conversions) || Number(c.leads) || 0;
+                      acc[key].clicks += Number(c.clicks) || 0;
+                      acc[key].budget += Number(c.budget) || 0;
+                      acc[key].impressions += Number(c.impressions) || 0;
+                      return acc;
+                    }, {} as Record<string, any>);
+
+                    const channelChartData = Object.values(groupedDataMap).map((item: any) => {
+                      const cpa = item.conversions > 0 ? (item.spend / item.conversions) : 0;
+                      const ctr = item.impressions > 0 ? ((item.clicks / item.impressions) * 100) : 0;
+                      return {
+                        ...item,
+                        cpa: Math.round(cpa),
+                        ctr: parseFloat(ctr.toFixed(2))
+                      };
+                    });
+
+                    return (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={channelChartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                          <YAxis yAxisId="left" stroke={getMetricColor(primaryMetric)} fontSize={10} tickLine={false} />
+                          {secondaryMetric !== "none" && (
+                            <YAxis yAxisId="right" orientation="right" stroke={getMetricColor(secondaryMetric, true)} fontSize={10} tickLine={false} />
+                          )}
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: "#0f172a", borderRadius: "8px", border: "none", color: "#fff" }}
+                            formatter={(value, name) => [[`${typeof value === 'number' && name.toString().includes("₹") ? "₹" : ""}${Number(value).toLocaleString("en-IN")}`], name]} 
+                          />
+                          <Bar 
+                            yAxisId="left" 
+                            dataKey={primaryMetric} 
+                            name={`${getMetricLabel(primaryMetric)}`} 
+                            fill={getMetricColor(primaryMetric)} 
+                            radius={[6, 6, 0, 0]} 
+                            className="transition-all duration-300 hover:opacity-85 cursor-pointer"
+                          />
+                          {secondaryMetric !== "none" && (
+                            <Line 
+                              yAxisId="right" 
+                              type="monotone" 
+                              dataKey={secondaryMetric} 
+                              name={`${getMetricLabel(secondaryMetric)}`} 
+                              stroke={getMetricColor(secondaryMetric, true)} 
+                              strokeWidth={2.5}
+                              dot={{ r: 4, strokeWidth: 1.5, fill: "#fff" }}
+                              activeDot={{ r: 6 }}
+                            />
+                          )}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    );
+                  })() : activeAnalysisTab === "campaigns" ? (() => {
+                    // Render Tab 2: Campaigns Leaderboard
+                    const sortedCampaignsData = [...filteredCampaigns]
+                      .map(c => {
+                        const cpa = c.conversions > 0 ? Math.round(c.spend / c.conversions) : 0;
+                        const ctr = c.impressions > 0 ? parseFloat(((c.clicks / c.impressions) * 100).toFixed(2)) : 0;
+                        return {
+                          id: c.id,
+                          name: c.name,
+                          spend: Number(c.spend) || 0,
+                          conversions: Number(c.conversions) || Number(c.leads) || 0,
+                          clicks: Number(c.clicks) || 0,
+                          budget: Number(c.budget) || 0,
+                          cpa,
+                          ctr,
+                        };
+                      })
+                      .sort((a, b) => {
+                        const valA = Number(a[primaryMetric as keyof typeof a]) || 0;
+                        const valB = Number(b[primaryMetric as keyof typeof b]) || 0;
+                        return valB - valA;
+                      })
+                      .slice(0, 8);
+
+                    return (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart 
+                          data={sortedCampaignsData} 
+                          layout="vertical" 
+                          margin={{ top: 5, right: 10, left: 30, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                          <XAxis type="number" stroke="#94a3b8" fontSize={10} tickLine={false} />
+                          <YAxis 
+                            dataKey="name" 
+                            type="category" 
+                            stroke="#64748b" 
+                            fontSize={9.5} 
+                            width={110}
+                            tickFormatter={(text) => text.length > 15 ? `${text.slice(0, 15)}...` : text}
+                            tickLine={false} 
+                          />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: "#0f172a", borderRadius: "8px", border: "none", color: "#fff" }}
+                            formatter={(value) => [`${primaryMetric === 'spend' || primaryMetric === 'budget' ? '₹' : ''}${Number(value).toLocaleString("en-IN")}`, getMetricLabel(primaryMetric)]}
+                          />
+                          <Bar 
+                            dataKey={primaryMetric} 
+                            name={getMetricLabel(primaryMetric)} 
+                            fill={getMetricColor(primaryMetric)} 
+                            radius={[0, 5, 5, 0]}
+                            onClick={(data) => {
+                              if (data && data.id) setSelectedInspectorCampaignId(data.id);
+                            }}
+                            className="cursor-pointer transition-all hover:opacity-85"
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    );
+                  })() : activeAnalysisTab === "efficiency" ? (() => {
+                    // Render Tab 3: Efficiency Map (CPA Scatter Chart)
+                    const scatterPlotData = filteredCampaigns.map(c => {
+                      const cpaValue = c.conversions > 0 ? Math.round(c.spend / c.conversions) : 0;
+                      return {
+                        id: c.id,
+                        name: c.name,
+                        cpa: cpaValue,
+                        conversions: Number(c.conversions) || Number(c.leads) || 0,
+                        spend: Number(c.spend) || 0,
+                        platform: c.platform,
+                      };
+                    }).filter(c => c.cpa > 0);
+
+                    return (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis 
+                            type="number" 
+                            dataKey="cpa" 
+                            name="Cost per Lead" 
+                            unit="₹" 
+                            stroke="#94a3b8" 
+                            fontSize={10}
+                            label={{ value: "CPA / Cost Per Lead (Lower is better)", position: "insideBottom", offset: -5, fontSize: 10, fill: "#64748b" }} 
+                          />
+                          <YAxis 
+                            type="number" 
+                            dataKey="conversions" 
+                            name="Lead Volume" 
+                            stroke="#94a3b8" 
+                            fontSize={10}
+                            label={{ value: "Conversions / Lead Count (Higher is better)", angle: -90, position: "insideLeft", offset: 10, fontSize: 10, fill: "#64748b" }} 
+                          />
+                          <ZAxis type="number" dataKey="spend" range={[50, 400]} name="Campaign Spend" unit="₹" />
+                          <Tooltip 
+                            cursor={{ strokeDasharray: "3 3" }} 
+                            contentStyle={{ backgroundColor: "#0f172a", borderRadius: "8px", border: "none", color: "#fff" }}
+                            formatter={(value, name) => [name === "cpa" || name === "spend" ? `₹${Number(value).toLocaleString("en-IN")}` : value, name]}
+                          />
+                          <Scatter 
+                            name="Campaigns" 
+                            data={scatterPlotData} 
+                            fill="#4f46e5" 
+                            onClick={(node) => {
+                              if (node && node.id) setSelectedInspectorCampaignId(node.id);
+                            }}
+                            className="cursor-pointer"
+                          >
+                            {scatterPlotData.map((entry, index) => {
+                              // Color code node by platform
+                              let cellColor = "#6366f1"; // Google default
+                              if (entry.platform.includes("Meta")) cellColor = "#10b981";
+                              else if (entry.platform.includes("LinkedIn")) cellColor = "#3b82f6";
+                              else if (entry.platform.includes("YouTube")) cellColor = "#ef4444";
+                              return <Cell key={`cell-${index}`} fill={cellColor} />;
+                            })}
+                          </Scatter>
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    );
+                  })() : (() => {
+                    // Render Tab 4: Cumulative Timeline
+                    const sortedByDate = [...filteredCampaigns]
+                      .filter(c => c.startDate)
+                      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+                    let cumulativeSpend = 0;
+                    let cumulativeLeads = 0;
+
+                    const cumulativeData = sortedByDate.map((c, idx) => {
+                      cumulativeSpend += Number(c.spend) || 0;
+                      cumulativeLeads += Number(c.conversions) || Number(c.leads) || 0;
+                      return {
+                        dateLabel: new Date(c.startDate).toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+                        campaignName: c.name,
+                        cumulativeSpend,
+                        cumulativeLeads,
+                      };
+                    });
+
+                    return (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={cumulativeData} margin={{ top: 10, right: 10, left: 5, bottom: 5 }}>
+                          <defs>
+                            <linearGradient id="gradientSpend" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4}/>
+                              <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                            </linearGradient>
+                            <linearGradient id="gradientLeads" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                          <XAxis dataKey="dateLabel" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                          <YAxis yAxisId="left" stroke="#6366f1" fontSize={10} tickLine={false} />
+                          <YAxis yAxisId="right" orientation="right" stroke="#10b981" fontSize={10} tickLine={false} />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: "#0f172a", borderRadius: "8px", border: "none", color: "#fff" }}
+                            formatter={(value, name) => [name === "cumulativeSpend" ? `₹${Number(value).toLocaleString("en-IN")}` : value, name === "cumulativeSpend" ? "Cumulative Spend" : "Cumulative Leads"]}
+                          />
+                          <Area 
+                            yAxisId="left" 
+                            type="monotone" 
+                            dataKey="cumulativeSpend" 
+                            stroke="#6366f1" 
+                            fillOpacity={1} 
+                            fill="url(#gradientSpend)" 
+                            name="cumulativeSpend" 
+                            strokeWidth={2}
+                          />
+                          <Area 
+                            yAxisId="right" 
+                            type="monotone" 
+                            dataKey="cumulativeLeads" 
+                            stroke="#10b981" 
+                            fillOpacity={1} 
+                            fill="url(#gradientLeads)" 
+                            name="cumulativeLeads" 
+                            strokeWidth={2}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    );
+                  })()}
+                </div>
+
+                {/* Micro Action Helper Notice below chart */}
+                <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-150 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-550">
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse shrink-0" />
+                    <span>
+                      {activeAnalysisTab === "campaigns" || activeAnalysisTab === "efficiency"
+                        ? "💡 Interactive Action: Click on any campaign's visual marker or bar to populate the custom budget simulator on the right panel."
+                        : `💡 Analysis Insight: Filter states on the primary and secondary metric selector dropdowns to change what Recharts plots inside this viewport.`
+                      }
+                    </span>
+                  </div>
+
+                  {activeAnalysisTab === "efficiency" && (
+                    <div className="flex gap-2.5 shrink-0 text-[10px] font-bold font-mono">
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-500" />Meta</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-blue-500" />LinkedIn</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-indigo-500" />Google</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-500" />YouTube</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Panel: Campaign Inspector & Budget Simulator (col-span-1) */}
+              {(() => {
+                const activeInspectorCampaign = filteredCampaigns.find(c => c.id === selectedInspectorCampaignId) || filteredCampaigns[0] || null;
+
+                if (!activeInspectorCampaign) {
+                  return (
+                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 border-dashed text-center flex flex-col items-center justify-center space-y-3 h-full">
+                      <Compass className="text-slate-350 animate-bounce" size={32} />
+                      <h4 className="font-bold text-slate-700 text-xs font-display uppercase tracking-wider">Campaign Explorer empty</h4>
+                      <p className="text-[11px] text-slate-400">Launch or declare ad metrics under the "Campaign" page to start evaluating sandbox simulations.</p>
+                    </div>
+                  );
+                }
+
+                // Mathematical calculations for simulator forecasts
+                const currentCPA = activeInspectorCampaign.conversions > 0 
+                  ? (activeInspectorCampaign.spend / activeInspectorCampaign.conversions) 
+                  : (totalSpend / (totalConversions || 1));
+                
+                const multiplier = 1 + (simulatedBudgetChange / 100);
+                const simulatedSpend = activeInspectorCampaign.spend * multiplier;
+                const simulatedConversions = Math.max(0, Math.round(simulatedSpend / (currentCPA || 1)));
+                
+                const currentCPC = activeInspectorCampaign.clicks > 0 ? (activeInspectorCampaign.spend / activeInspectorCampaign.clicks) : 0;
+                const simulatedClicks = currentCPC > 0 ? Math.round(simulatedSpend / currentCPC) : 0;
+
+                // CTR dynamic rating
+                const ctrRating = activeInspectorCampaign.impressions > 0 
+                  ? (activeInspectorCampaign.clicks / activeInspectorCampaign.impressions) * 100 
+                  : 0;
+
+                // Recommendation text engine
+                let ratingColor = "bg-slate-50 text-slate-700 border-slate-200";
+                let promptTip = "Balanced campaign efficiency. Allocate budget steadily to monitor outcomes.";
+
+                if (currentCPA < 350) {
+                  ratingColor = "bg-emerald-50 text-emerald-800 border-emerald-150";
+                  promptTip = "🔥 High Efficiency Star: Cpl/Cpa is extremely low! Strongly suggest allocating maximum budget here.";
+                } else if (currentCPA > 1200) {
+                  ratingColor = "bg-rose-50 text-rose-800 border-rose-150";
+                  promptTip = "⚠️ High Acquisition Cost: CPA indicates low conversion yields. Focus on tightening audience interests first.";
+                } else if (ctrRating > 4) {
+                  ratingColor = "bg-amber-50 text-amber-800 border-amber-150";
+                  promptTip = "📈 Highly Engaging Ad Creative: Superb Click Rate. Relocate planned budget to capture higher lead volumes.";
+                }
+
+                // Platform logo mapping
+                let logoText = "🔵";
+                if (activeInspectorCampaign.platform.toLowerCase().includes("google")) logoText = "🔴";
+                else if (activeInspectorCampaign.platform.toLowerCase().includes("meta")) logoText = "🟢";
+                else if (activeInspectorCampaign.platform.toLowerCase().includes("linkedin")) logoText = "🔵";
+                else if (activeInspectorCampaign.platform.toLowerCase().includes("youtube")) logoText = "🔺";
+
+                return (
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between">
+                    <div className="space-y-4">
+                      {/* Section Title */}
+                      <div className="border-b border-slate-100 pb-3">
+                        <span className="text-[9px] font-black uppercase text-indigo-600 bg-indigo-50/80 border border-indigo-150 px-2 py-0.5 rounded-full font-mono">
+                          Campaign Diagnostics & Forecasts
+                        </span>
+                        <h4 className="text-sm font-black text-slate-800 mt-2 truncate font-display tracking-tight" title={activeInspectorCampaign.name}>
+                          {logoText} {activeInspectorCampaign.name}
+                        </h4>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <span className="text-[10px] text-slate-500 font-medium">Project:</span>
+                          <span className="text-[10px] bg-slate-100 text-slate-700 hover:bg-slate-200 px-1.5 py-0.2 rounded font-bold transition-all">
+                            {getProjectName(activeInspectorCampaign)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Diagnostic metrics stack */}
+                      <div className="grid grid-cols-2 gap-2 text-[10.5px]">
+                        <div className="bg-slate-50/60 p-2.5 rounded-lg border border-slate-150">
+                          <span className="text-slate-450 block text-[9px] font-bold uppercase font-mono mb-1">Baseline Spend</span>
+                          <span className="font-mono font-black text-slate-800 text-xs">{formatINR(activeInspectorCampaign.spend)}</span>
+                        </div>
+                        <div className="bg-slate-50/60 p-2.5 rounded-lg border border-slate-150">
+                          <span className="text-slate-450 block text-[9px] font-bold uppercase font-mono mb-1">CPL / CPA</span>
+                          <span className="font-mono font-black text-slate-800 text-xs">{formatINR(currentCPA)}</span>
+                        </div>
+                        <div className="bg-slate-50/60 p-2.5 rounded-lg border border-slate-150">
+                          <span className="text-slate-450 block text-[9px] font-bold uppercase font-mono mb-1">CTR Rate</span>
+                          <span className="font-mono font-black text-slate-800 text-xs">{ctrRating.toFixed(2)}%</span>
+                        </div>
+                        <div className="bg-slate-50/60 p-2.5 rounded-lg border border-slate-150">
+                          <span className="text-slate-450 block text-[9px] font-bold uppercase font-mono mb-1">Lead Count</span>
+                          <span className="font-mono font-black text-slate-800 text-xs">{(activeInspectorCampaign.conversions || activeInspectorCampaign.leads || 0)} Units</span>
+                        </div>
+                      </div>
+
+                      {/* Interactive budget adjustment slider */}
+                      <div className="space-y-3 pt-3 border-t border-slate-100">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase text-slate-450 font-mono">Relocate Budget Spending</span>
+                          <span className={`text-[10.5px] font-mono px-2 py-0.5 rounded-md font-bold ${
+                            simulatedBudgetChange > 0 
+                              ? "bg-emerald-50 text-emerald-700" 
+                              : simulatedBudgetChange < 0 
+                                ? "bg-rose-50 text-rose-700" 
+                                : "bg-slate-100 text-slate-700"
+                          }`}>
+                            {simulatedBudgetChange > 0 ? `+${simulatedBudgetChange}%` : `${simulatedBudgetChange}%`}
+                          </span>
+                        </div>
+
+                        <input 
+                          type="range" 
+                          min="-50" 
+                          max="200" 
+                          step="25" 
+                          value={simulatedBudgetChange} 
+                          onChange={(e) => setSimulatedBudgetChange(Number(e.target.value))}
+                          className="w-full h-1.5 bg-slate-100 border border-slate-200 hover:border-slate-300 rounded-lg appearance-none cursor-pointer accent-indigo-600 transition-all"
+                        />
+
+                        {/* Slider tick guides */}
+                        <div className="flex justify-between text-[8px] font-mono font-semibold text-slate-400 select-none px-0.5">
+                          <span>-50%</span>
+                          <span>Base</span>
+                          <span>+50%</span>
+                          <span>+100%</span>
+                          <span>+150%</span>
+                          <span>+200%</span>
+                        </div>
+                      </div>
+
+                      {/* Simulation Forecast Matrix */}
+                      <div className="bg-indigo-950 text-slate-100 p-4 rounded-xl border border-indigo-900 shadow-3xs space-y-3">
+                        <div className="border-b border-indigo-800 pb-1.5">
+                          <span className="text-[8.5px] uppercase font-mono tracking-wider font-extrabold text-indigo-300">
+                            Live Predictive Simulation (Next 30D Window)
+                          </span>
+                        </div>
+
+                        <div className="space-y-2 text-[11px] leading-relaxed">
+                          <div className="flex justify-between border-b border-indigo-900/60 pb-1">
+                            <span className="text-slate-350 font-medium">Estimated Spend:</span>
+                            <span className="font-mono font-bold text-white">
+                              {formatINR(Math.round(simulatedSpend))}
+                            </span>
+                          </div>
+                          <div className="flex justify-between border-b border-indigo-900/60 pb-1">
+                            <span className="text-slate-350 font-medium font-sans">Predicted Conversions:</span>
+                            <span className="font-mono font-extrabold text-emerald-400 flex items-center gap-1">
+                              <span>{simulatedConversions} Leads</span>
+                              <span className="text-[9px] text-slate-350 font-medium italic">
+                                ({simulatedConversions - (activeInspectorCampaign.conversions || 0) >= 0 ? "+" : ""}
+                                {simulatedConversions - (activeInspectorCampaign.conversions || 0)})
+                              </span>
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-350 font-medium">Predicted Clicks:</span>
+                            <span className="font-mono font-bold text-white">
+                              {simulatedClicks} (avg CPC: ₹{currentCPC.toFixed(1)})
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* AI Advisory Box */}
+                      <div className={`p-3 rounded-lg border text-[10.5px] leading-relaxed font-sans ${ratingColor}`}>
+                        <div className="flex gap-1.5 items-start">
+                          <div className="shrink-0 mt-0.5 select-none">💡</div>
+                          <p className="font-medium">{promptTip}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Operational Action Panel */}
+                    <div className="pt-3 border-t border-slate-100 mt-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          alert(`Simulated plan adopted!\nrelocated ${simulatedBudgetChange}% budget into campaign: ${activeInspectorCampaign.name}.\nThis simulation model has been successfully logged.`);
+                        }}
+                        className="w-full justify-center h-10 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 font-bold text-xs text-white rounded-lg shadow-sm font-sans flex items-center gap-1.5 cursor-pointer hover:shadow-md transition-all active:scale-98"
+                      >
+                        Adopt Simulated Relocation
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
+
+          <div className="border-b border-slate-200 my-6" />
 
           {/* Live Operations & Modification Feed (Audit Trail) */}
           {(() => {
