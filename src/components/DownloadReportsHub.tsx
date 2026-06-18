@@ -187,7 +187,7 @@ export default function DownloadReportsHub({
     return true;
   };
 
-  // Filter raw data using search text & date constraints
+  // Filter raw data using search text & date constraints and enhance with Campaign Info & Metrics
   const getFilteredReportData = (type: ReportType): any[] => {
     const data = getRawReportData(type);
     
@@ -200,13 +200,163 @@ export default function DownloadReportsHub({
       });
     }
 
-    if (!searchQuery.trim()) return filtered;
+    // Capture search filter first
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(row => {
+        return Object.values(row).some(val => 
+          String(val).toLowerCase().includes(query)
+        );
+      });
+    }
 
-    const query = searchQuery.toLowerCase();
-    return filtered.filter(row => {
-      return Object.values(row).some(val => 
-        String(val).toLowerCase().includes(query)
-      );
+    // Map each report type, ensuring every sheet contains a campaignName, campaignManager, and crucial metrics
+    return filtered.map(row => {
+      switch (type) {
+        case 'campaigns': {
+          const c = row as Campaign;
+          return {
+            campaignName: c.name,
+            campaignManager: c.campaignManager || "Ad Operations Team",
+            status: c.status,
+            platform: c.platform,
+            budget: c.budget,
+            spend: c.spend,
+            conversions: c.conversions || 0,
+            clicks: c.clicks || 0,
+            impressions: c.impressions || 0,
+            ctrPercent: c.impressions > 0 ? Number(((c.clicks / c.impressions) * 100).toFixed(2)) : 0,
+            cpl: c.conversions > 0 ? Number((c.spend / c.conversions).toFixed(2)) : 0,
+            startDate: c.startDate,
+            endDate: c.endDate,
+          };
+        }
+        case 'leads': {
+          const l = row as Lead;
+          // Look up corresponding campaign
+          const cmp = campaigns.find(c => c.id === l.campaignId || c.name === l.campaignName);
+          return {
+            leadName: l.leadName,
+            campaignName: l.campaignName || cmp?.name || "Direct / Organic",
+            campaignManager: cmp?.campaignManager || "Ad Operations Team",
+            email: l.email,
+            phone: l.phone,
+            platform: l.platform || cmp?.platform || "Ad Campaign",
+            status: l.status,
+            campaignSpend: cmp?.spend ?? 0,
+            campaignConversions: cmp?.conversions ?? 0,
+            campaignCpl: cmp && cmp.conversions ? Number((cmp.spend / cmp.conversions).toFixed(2)) : 0,
+            dateCreated: l.createdAt ? l.createdAt.split("T")[0] : "",
+          };
+        }
+        case 'portal_reports': {
+          const r = row as PortalReportRow;
+          // Look up campaign matching project
+          const cmp = campaigns.find(c => 
+            ((c as any).projectName && (c as any).projectName.toLowerCase() === r.project.toLowerCase()) || 
+            c.name.toLowerCase().includes(r.project.toLowerCase())
+          );
+          return {
+            projectName: r.project,
+            campaignName: cmp?.name || `${r.project} Portal Listing`,
+            campaignManager: cmp?.campaignManager || "Sales Manager",
+            date: r.date,
+            portal: r.portal,
+            generatedLeads: r.generated,
+            siteVisitsScheduled: r.svs,
+            siteVisitsConducted: r.svc,
+            walkins: r.walkin,
+            grossBookings: r.gross,
+            netBookings: r.net,
+            svcToLeadPct: r.generated > 0 ? Number(((r.svc / r.generated) * 100).toFixed(1)) : 0,
+          };
+        }
+        case 'target_budgets': {
+          const t = row as TargetBudgetRow;
+          // Look up campaign matching project
+          const cmp = campaigns.find(c => 
+            ((c as any).projectName && (c as any).projectName.toLowerCase() === t.project.toLowerCase()) || 
+            c.name.toLowerCase().includes(t.project.toLowerCase())
+          );
+          return {
+            projectName: t.project,
+            campaignName: cmp?.name || `${t.project} Planned Target`,
+            campaignManager: cmp?.campaignManager || "Planning Manager",
+            month: t.month,
+            medium: t.medium,
+            budget: t.budget,
+            spend: t.spend,
+            totalLeadTarget: t.totalLeadTarget,
+            totalLeadAchieved: t.totalLeadAchieved,
+            achievementRatePct: t.totalLeadTarget > 0 ? Number(((t.totalLeadAchieved / t.totalLeadTarget) * 100).toFixed(1)) : 0,
+            targetCpl: t.totalLeadTarget > 0 ? Number((t.budget / t.totalLeadTarget).toFixed(2)) : 0,
+            achievedCpl: t.totalLeadAchieved > 0 ? Number((t.spend / t.totalLeadAchieved).toFixed(2)) : 0,
+          };
+        }
+        case 'creatives': {
+          const cr = row as CreativeAsset;
+          // Look up campaign matching
+          const cmp = campaigns.find(c => c.id === cr.campaignId || c.name === cr.campaignName);
+          return {
+            creativeName: cr.name,
+            campaignName: cr.campaignName || cmp?.name || "Dynamic Variation",
+            campaignManager: cmp?.campaignManager || "Ad Creative Team",
+            platform: cr.platform,
+            headline: cr.headline,
+            bodyText: cr.bodyText,
+            clicks: cr.clicks || 0,
+            conversions: cr.conversions || 0,
+            spend: cr.spend || 0,
+            ctrPercent: (cr.clicks && cmp?.impressions) ? Number(((cr.clicks / cmp.impressions) * 100).toFixed(2)) : 1.25,
+            cpl: cr.conversions > 0 ? Number((cr.spend / cr.conversions).toFixed(2)) : 0,
+            creativeUrlOrThumbnail: cr.imageUrl || "",
+          };
+        }
+        case 'comparisons': {
+          const mc = row as MetricComparison;
+          const cmp = campaigns.find(c => 
+            c.campaignManager === mc.owner || 
+            c.name.toLowerCase().includes(mc.metric.toLowerCase())
+          );
+          return {
+            metric: mc.metric,
+            campaignName: cmp?.name || "Comparison Experiment",
+            campaignManager: mc.owner || cmp?.campaignManager || "Research Analyst",
+            beforeValue: mc.beforeValue,
+            afterValue: mc.afterValue,
+            improved: mc.improved,
+            leads: mc.leads,
+            svcConducted: mc.svc,
+            svcPercent: mc.svcPercent,
+            bookings: mc.booked,
+            bookingPercent: mc.bookedPercent,
+            followUp: mc.followUp,
+            status: mc.status,
+          };
+        }
+        case 'campaign_reports': {
+          const cr = row as CampaignReport;
+          const cmp = campaigns.find(c => c.name === cr.campaignName || (c as any).projectName === cr.projectName);
+          return {
+            campaignName: cr.campaignName,
+            campaignManager: cmp?.campaignManager || "Ad Operations Team",
+            date: cr.date,
+            projectName: cr.projectName,
+            adAccountId: cr.adAccountId,
+            leads: cr.leads,
+            reach: cr.reach,
+            impression: cr.impression,
+            amountSpend: cr.amountSpend,
+            targetLeads: cr.targetLeads,
+            achievedLeads: cr.achievedLeads,
+            ctr: cr.ctr || (cr.clicks && cr.impression ? Number(((cr.clicks / cr.impression) * 100).toFixed(2)) : 0.0),
+            clicks: cr.clicks || 0,
+            svcBooking: cr.svcBooking,
+          };
+        }
+        default:
+          return row;
+      }
     });
   };
 
@@ -267,7 +417,15 @@ export default function DownloadReportsHub({
     // Filter down to interesting visible columns
     const allKeys = Object.keys(filtered[0]);
     const skipped = ["id", "createdAt", "updatedAt", "creativeImageUrl", "notes", "creativeBase64"];
-    return allKeys.filter(k => !skipped.includes(k)).slice(0, 7);
+    const baseKeys = allKeys.filter(k => !skipped.includes(k));
+    
+    // For creative reports, always keep the creativeUrlOrThumbnail visible in the table preview
+    if (type === 'creatives') {
+      const remaining = baseKeys.filter(k => k !== 'creativeUrlOrThumbnail');
+      return [...remaining.slice(0, 8), 'creativeUrlOrThumbnail'];
+    }
+    
+    return baseKeys.slice(0, 10);
   };
 
   const reportsList: { key: ReportType; title: string; desc: string; icon: any; color: string }[] = [
@@ -587,15 +745,44 @@ export default function DownloadReportsHub({
                         }
                         
                         // Custom aesthetics rules per column type
-                        let isCurrency = col.toLowerCase().includes("spend") || col.toLowerCase().includes("budget") || col.toLowerCase().includes("cost");
+                        let isCurrency = col.toLowerCase().includes("spend") || 
+                                         col.toLowerCase().includes("budget") || 
+                                         col.toLowerCase().includes("cost") || 
+                                         col.toLowerCase().includes("cpl") ||
+                                         col.toLowerCase().includes("valuation");
                         let isStatus = col.toLowerCase() === "status";
-                        let isPercentage = col.toLowerCase() === "ctr" || col.toLowerCase().includes("percent");
+                        let isPercentage = col.toLowerCase() === "ctr" || 
+                                           col.toLowerCase().includes("percent") || 
+                                           col.toLowerCase().includes("ratio") ||
+                                           col.toLowerCase().endsWith("pct");
+                        let isCreativeUrl = col === "creativeUrlOrThumbnail";
                         
                         return (
                           <td key={col} className="p-3">
-                            {isCurrency ? (
+                            {isCreativeUrl ? (
+                              <div className="flex items-center gap-2">
+                                {renderedVal ? (
+                                  <>
+                                    <img 
+                                      src={renderedVal} 
+                                      alt="Thumbnail" 
+                                      className="w-8 h-8 object-cover rounded-lg border border-slate-200 bg-slate-100 shrink-0 shadow-3xs" 
+                                      referrerPolicy="no-referrer"
+                                      onError={(e) => {
+                                        (e.target as HTMLElement).style.display = 'none';
+                                      }}
+                                    />
+                                    <span className="text-[10px] font-mono text-indigo-650 font-bold truncate max-w-[120px]" title={renderedVal}>
+                                      {renderedVal.startsWith("data:") ? "🖼️ Base64 Image" : "🔗 URL Link"}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-slate-400 italic">No Image</span>
+                                )}
+                              </div>
+                            ) : isCurrency ? (
                               <span className="font-bold text-emerald-700">
-                                ${Number(val) ? Number(val).toLocaleString() : renderedVal}
+                                ${Number(val) ? Number(val).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : renderedVal}
                               </span>
                             ) : isPercentage ? (
                               <span className="font-bold text-indigo-650 font-mono">

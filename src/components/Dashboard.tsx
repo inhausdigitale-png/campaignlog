@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Campaign, CampaignPerformance, AIRecommendationReport, ChangeLogEntry, PortalReportRow } from "../types";
+import { Campaign, CampaignPerformance, AIRecommendationReport, ChangeLogEntry, PortalReportRow, DailySpendEntry } from "../types";
 import { formatINR, formatIndianShort, formatIndianNumber } from "../utils/indiaHelpers";
 import {
   ResponsiveContainer,
@@ -45,6 +45,7 @@ import {
   Share2,
   Compass,
   Info,
+  Download,
 } from "lucide-react";
 import { dataService } from "../services/dataService";
 import PortalDashboard from "./PortalDashboard";
@@ -55,6 +56,7 @@ interface DashboardProps {
   portalReports?: PortalReportRow[];
   onSavePerformance?: (p: CampaignPerformance) => Promise<void>;
   changeLogEntries?: ChangeLogEntry[];
+  dailySpendList?: DailySpendEntry[];
 }
 
 export default function Dashboard({ 
@@ -62,7 +64,8 @@ export default function Dashboard({
   campaignPerformances = [], 
   portalReports = [],
   onSavePerformance,
-  changeLogEntries = []
+  changeLogEntries = [],
+  dailySpendList = []
 }: DashboardProps) {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("All");
   const [selectedProject, setSelectedProject] = useState<string>("All");
@@ -71,7 +74,7 @@ export default function Dashboard({
   const [dashboardView, setDashboardView] = useState<"digital" | "portal">("digital");
 
   // Interactive Campaign Charts Analytics States
-  const [activeAnalysisTab, setActiveAnalysisTab] = useState<"channels" | "campaigns" | "efficiency" | "timeSeries">("channels");
+  const [activeAnalysisTab, setActiveAnalysisTab] = useState<"channels" | "campaigns" | "efficiency" | "timeSeries" | "dailySpends">("channels");
   const [groupedBy, setGroupedBy] = useState<"platform" | "project">("platform");
   const [primaryMetric, setPrimaryMetric] = useState<"spend" | "conversions" | "clicks" | "budget">("spend");
   const [secondaryMetric, setSecondaryMetric] = useState<"conversions" | "clicks" | "cpa" | "ctr" | "none">("conversions");
@@ -196,6 +199,106 @@ export default function Dashboard({
     const matchesEndDate = !endDateFilter || !c.endDate || c.endDate <= endDateFilter;
     return matchesPlatform && matchesProject && matchesStartDate && matchesEndDate;
   });
+
+  // Filter daily spend list based on Dashboard Project and Date Range filters
+  const filteredDailySpends = React.useMemo(() => {
+    let list = dailySpendList && dailySpendList.length > 0 ? dailySpendList : [
+      { id: "seed_1_meta", date: "2026-06-01", project: "Grand Horizon Residence", medium: "Meta Ad Acc", spend: 1292.76, leads: 8, createdAt: "2026-06-01" },
+      { id: "seed_1_projectwise", date: "2026-06-01", project: "Grand Horizon Residence", medium: "Projectwise Acc", spend: 2299.37, leads: 17, createdAt: "2026-06-01" },
+      { id: "seed_2_meta", date: "2026-06-02", project: "Grand Horizon Residence", medium: "Meta Ad Acc", spend: 1318.22, leads: 9, createdAt: "2026-06-02" },
+      { id: "seed_2_projectwise", date: "2026-06-02", project: "Grand Horizon Residence", medium: "Projectwise Acc", spend: 2152.71, leads: 12, createdAt: "2026-06-02" },
+      { id: "seed_3_meta", date: "2026-06-03", project: "Vivaana", medium: "Meta Ad Acc", spend: 890.00, leads: 5, createdAt: "2026-06-03" },
+      { id: "seed_3_projectwise", date: "2026-06-03", project: "Vivaana", medium: "Projectwise Acc", spend: 1740.00, leads: 10, createdAt: "2026-06-03" }
+    ];
+
+    if (selectedProject !== "All") {
+      list = list.filter(e => e.project === selectedProject);
+    }
+    if (startDateFilter) {
+      list = list.filter(e => e.date >= startDateFilter);
+    }
+    if (endDateFilter) {
+      list = list.filter(e => e.date <= endDateFilter);
+    }
+    return list;
+  }, [dailySpendList, selectedProject, startDateFilter, endDateFilter]);
+
+  // Aggregate for rendering a day-wise list on the Dashboard
+  const pivotedDailySpends = React.useMemo(() => {
+    const groups: Record<string, DailySpendEntry[]> = {};
+    filteredDailySpends.forEach(entry => {
+      const key = `${entry.date}__${entry.project}`;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(entry);
+    });
+
+    const rows = Object.keys(groups).map(key => {
+      const entries = groups[key];
+      const dateStr = entries[0].date;
+      const projectStr = entries[0].project;
+      const totalSpendWithoutGst = entries.reduce((acc, c) => acc + c.spend, 0);
+      const totalLeads = entries.reduce((acc, c) => acc + c.leads, 0);
+      const cplWithoutGst = totalLeads > 0 ? (totalSpendWithoutGst / totalLeads) : 0;
+      const totalSpendWithGst = totalSpendWithoutGst * 1.18;
+
+      return {
+        date: dateStr,
+        project: projectStr,
+        totalSpendWithoutGst,
+        totalLeads,
+        cplWithoutGst,
+        totalSpendWithGst
+      };
+    });
+
+    return rows.sort((a, b) => b.date.localeCompare(a.date));
+  }, [filteredDailySpends]);
+
+  // Calculate totals for the filtered day-wise spends
+  const dailySpendsTotals = React.useMemo(() => {
+    let spendWithoutGst = 0;
+    let leads = 0;
+    filteredDailySpends.forEach(e => {
+      spendWithoutGst += e.spend || 0;
+      leads += e.leads || 0;
+    });
+    const spendWithGst = spendWithoutGst * 1.18;
+    const avgCpl = leads > 0 ? (spendWithoutGst / leads) : 0;
+    return { spendWithoutGst, spendWithGst, leads, avgCpl };
+  }, [filteredDailySpends]);
+
+  const parseLocalDate = (dateStr: string) => {
+    if (!dateStr) return "";
+    try {
+      const [year, month, day] = dateStr.split("-");
+      return `${day}/${month}/${year}`;
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  const exportDashboardDailySpendsToCsv = () => {
+    if (pivotedDailySpends.length === 0) return;
+    const headers = "Date,Project,Total Spend W/O GST,Leads,CPL W/O GST,Total Spend With GST (18%)\n";
+    const rows = pivotedDailySpends.map(row => {
+      const dateStr = parseLocalDate(row.date).replace(/,/g, "");
+      const projName = row.project.replace(/,/g, "");
+      return `"${dateStr}","${projName}",${row.totalSpendWithoutGst.toFixed(2)},${row.totalLeads},${row.cplWithoutGst.toFixed(2)},${row.totalSpendWithGst.toFixed(2)}`;
+    }).join("\n");
+
+    const content = headers + rows;
+    const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `dashboard_daywise_spend_${(selectedProject || "all").toLowerCase().replace(/[\s\(\):]/g, "_")}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Dynamic stats calculation
   const totalBudget = filteredCampaigns.reduce((sum, c) => sum + (Number(c.budget) || 0), 0);
@@ -601,10 +704,24 @@ export default function Dashboard({
                   className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
                     activeAnalysisTab === "timeSeries"
                       ? "bg-indigo-600 text-white shadow-xs"
-                      : "text-slate-450 text-slate-300 hover:text-white hover:bg-slate-700/50"
+                      : "text-slate-350 hover:text-white hover:bg-slate-700/50"
                   }`}
                 >
                   📈 Growth Timeline
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveAnalysisTab("dailySpends");
+                    setSimulatedBudgetChange(0);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    activeAnalysisTab === "dailySpends"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-slate-350 hover:text-white hover:bg-slate-700/50"
+                  }`}
+                >
+                  📅 Day-wise Spends
                 </button>
               </div>
             </div>
@@ -727,8 +844,86 @@ export default function Dashboard({
                 </div>
 
                 {/* Main chart viewport container */}
-                <div className="h-80 w-full text-xs">
-                  {filteredCampaigns.length === 0 ? (
+                <div className={`${activeAnalysisTab === "dailySpends" ? "h-auto" : "h-80"} w-full text-xs`}>
+                  {activeAnalysisTab === "dailySpends" ? (
+                    // Day-wise spends grid view inside the Dashboard
+                    <div className="space-y-4 animate-fade-in w-full text-slate-800">
+                      {/* Inner KPI and Export Header Row */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 bg-slate-100/60 border border-slate-200 p-4 rounded-xl">
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900">
+                             Day-Wise Spend Tracker (Active Ledger)
+                          </h4>
+                          <p className="text-[11px] text-slate-500">Pivoted and compiled real-time spend ledger, fully reflective of project and date range filters.</p>
+                        </div>
+                        {pivotedDailySpends.length > 0 && (
+                          <button
+                            onClick={exportDashboardDailySpendsToCsv}
+                            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all cursor-pointer w-fit self-start sm:self-auto"
+                            title="Export compiled day-wise spends to CSV spreadsheet"
+                          >
+                            <Download size={13} />
+                            Export Day-wise CSV
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Inner KPI row */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 bg-indigo-50/20 p-4 rounded-xl border border-indigo-150/40">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Filtered Spend W/O GST</p>
+                          <p className="text-sm font-extrabold text-slate-900 font-mono">₹{dailySpendsTotals.spendWithoutGst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Filtered GST (18%)</p>
+                          <p className="text-sm font-semibold text-slate-600 font-mono font-medium">₹{(dailySpendsTotals.spendWithoutGst * 0.18).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Filtered Spends With GST</p>
+                          <p className="text-sm font-extrabold text-indigo-700 font-mono">₹{dailySpendsTotals.spendWithGst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Avg. Cost Per Lead (CPL)</p>
+                          <p className="text-sm font-extrabold text-emerald-700 font-mono font-bold">₹{dailySpendsTotals.avgCpl.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        </div>
+                      </div>
+
+                      {pivotedDailySpends.length === 0 ? (
+                        <div className="py-12 text-center text-slate-400 text-xs">
+                          <Info size={24} className="mx-auto text-slate-300 mb-1.5" />
+                          <p className="font-bold text-slate-650">No day-wise spend entries match the current dashboard filters.</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Please modify selected project or date ranges in the dashboard header above.</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-xl border border-slate-200/50 max-h-[300px]">
+                          <table className="w-full text-left text-xs border-collapse bg-white">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 sticky top-0">
+                                <th className="p-3">Date</th>
+                                <th className="p-3">Project Wise (Col A)</th>
+                                <th className="p-3 text-right bg-indigo-50/20 text-indigo-900 border-x border-slate-250/40">Spends (W/O GST)</th>
+                                <th className="p-3 text-right">Leads</th>
+                                <th className="p-3 text-right">CPL (W/O GST)</th>
+                                <th className="p-3 text-right bg-emerald-50/10 text-emerald-850 border-l border-slate-250/40">Spends With GST (18%)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {pivotedDailySpends.map((row, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50/85 transition-colors">
+                                  <td className="p-3 font-mono text-slate-500 font-semibold">{parseLocalDate(row.date)}</td>
+                                  <td className="p-3 text-slate-900 font-bold">{row.project}</td>
+                                  <td className="p-3 text-right font-mono text-indigo-700 bg-indigo-50/10 font-bold border-x border-slate-200/20">₹{row.totalSpendWithoutGst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                  <td className="p-3 text-right font-mono font-semibold">{row.totalLeads}</td>
+                                  <td className="p-3 text-right font-mono text-emerald-650 font-bold">₹{row.cplWithoutGst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                  <td className="p-3 text-right font-mono text-indigo-950 font-extrabold bg-emerald-50/5 border-l border-slate-200/20">₹{row.totalSpendWithGst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ) : filteredCampaigns.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
                       <Info className="animate-pulse text-indigo-500" size={24} />
                       <p className="font-semibold">No active campaign metrics fit the designated date/project filters.</p>

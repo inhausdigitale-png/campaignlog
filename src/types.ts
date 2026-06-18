@@ -211,6 +211,8 @@ export interface TargetBudgetRow {
 
 export interface RuleConfiguration {
   id: string; // e.g. "default"
+  scope?: "global" | "project" | "medium";
+  scopeValue?: string;
   targetCpa: number;
   minRoas: number;
   minCtr: number;
@@ -276,6 +278,17 @@ export interface CampaignPerformance {
   creativeType?: "static" | "video";
   campaignManager?: string;
   cpl?: number;
+}
+
+export interface DailySpendEntry {
+  id: string;
+  date: string;
+  project: string;
+  medium: string;
+  spend: number;
+  leads: number;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, SimulatedRoleType, CampaignPerformance, UserRolePermission, Invite } from "./types";
+import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, SimulatedRoleType, CampaignPerformance, UserRolePermission, Invite, DailySpendEntry } from "./types";
 import { dataService } from "./services/dataService";
 import { isFirebaseEnabled, isFirebaseConfigured, auth } from "./firebase";
 import { signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
@@ -18,6 +18,8 @@ import AIHub from "./components/AIHub";
 import GoogleSheetsSync from "./components/GoogleSheetsSync";
 import UserRolesSettings from "./components/UserRolesSettings";
 import LoginPage from "./components/LoginPage";
+import TargetPerformanceComparison from "./components/TargetPerformanceComparison";
+import DailySpendTracker from "./components/DailySpendTracker";
 import {
   Sparkles,
   LayoutDashboard,
@@ -40,11 +42,17 @@ import {
   Shield,
   TrendingUp,
   FileSpreadsheet,
+  ArrowUpDown,
+  Target,
+  ChevronDown,
+  Upload,
+  CalendarDays,
 } from "lucide-react";
 
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles" | "comparison" | "daily_spend">("dashboard");
+  const [campaignsMenuOpen, setCampaignsMenuOpen] = useState(true);
 
   // Custom/Simulated Roles & Permissions state
   const [rolePermissions, setRolePermissions] = useState<Record<string, UserRolePermission>>(() => {
@@ -86,9 +94,11 @@ export default function App() {
   const [portalReports, setPortalReports] = useState<PortalReportRow[]>([]);
   const [targetBudgets, setTargetBudgets] = useState<TargetBudgetRow[]>([]);
   const [ruleSetting, setRuleSetting] = useState<RuleConfiguration | null>(null);
+  const [ruleSettingsList, setRuleSettingsList] = useState<RuleConfiguration[]>([]);
   const [campaignPerformances, setCampaignPerformances] = useState<CampaignPerformance[]>([]);
   const [portalSubTab, setPortalSubTab] = useState<"pivot" | "database">("pivot");
   const [invites, setInvites] = useState<Invite[]>([]);
+  const [dailySpendList, setDailySpendList] = useState<DailySpendEntry[]>([]);
 
   // Auth States
   const [user, setUser] = useState<any>(() => {
@@ -157,7 +167,7 @@ export default function App() {
         }
       };
 
-      const [cRes, aRes, lRes, crRes, rRes, comRes, chgRes, pRes, tRes, sRes, perfRes, invRes] = await Promise.all([
+      const [cRes, aRes, lRes, crRes, rRes, comRes, chgRes, pRes, tRes, sRes, perfRes, invRes, allRulesRes, dailySpendRes] = await Promise.all([
         safeLoad(dataService.getCampaigns(), []),
         safeLoad(dataService.getAuditLogs(), []),
         safeLoad(dataService.getLeads(), []),
@@ -170,6 +180,8 @@ export default function App() {
         safeLoad(dataService.getRuleConfiguration(), null),
         safeLoad(dataService.getCampaignPerformances(), []),
         safeLoad(dataService.getInvites(), []),
+        safeLoad(dataService.getRuleConfigurations(), []),
+        safeLoad(dataService.getDailySpends(), []),
       ]);
 
       setCampaigns(cRes || []);
@@ -184,6 +196,8 @@ export default function App() {
       setRuleSetting(sRes);
       setCampaignPerformances(perfRes || []);
       setInvites(invRes || []);
+      setRuleSettingsList(allRulesRes || []);
+      setDailySpendList(dailySpendRes || []);
     } catch (err) {
       console.error("Failed to load records state:", err);
     } finally {
@@ -635,6 +649,11 @@ export default function App() {
     await loadAllDatabaseStates();
   };
 
+  const handleDeleteRuleConfiguration = async (id: string) => {
+    await dataService.deleteRuleConfiguration(id);
+    await loadAllDatabaseStates();
+  };
+
   // Action: Bulk Google Sheet Imports
   const handleImportLeads = async (importedLeads: Lead[]) => {
     await dataService.saveLeadsBulk(importedLeads);
@@ -683,6 +702,7 @@ export default function App() {
         startDate: perf.createdAt && typeof perf.createdAt === "string" ? perf.createdAt.split("T")[0] : new Date().toISOString().split("T")[0],
         endDate: perf.createdAt && typeof perf.createdAt === "string" ? perf.createdAt.split("T")[0] : new Date().toISOString().split("T")[0],
         objectives: `Project: ${perf.projectName || "Default"} | Adset: ${perf.adsetName || "Default"} (Uploaded)`,
+        projectName: perf.projectName,
         createdAt: perf.createdAt || new Date().toISOString(),
         updatedAt: perf.createdAt || new Date().toISOString(),
         adset: perf.adsetName,
@@ -896,18 +916,56 @@ export default function App() {
                 <span>Dashboard</span>
               </button>
 
-              {/* Campaigns Manager btn */}
-              <button
-                onClick={() => setActiveTab("campaigns")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "campaigns"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <Megaphone size={16} />
-                <span>Campaigns</span>
-              </button>
+              {/* Campaigns Collapsible Sub-menu Container */}
+              <div className="space-y-1 pt-1">
+                <button
+                  onClick={() => setCampaignsMenuOpen(!campaignsMenuOpen)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
+                    activeTab === "campaigns" || activeTab === "performance"
+                      ? "bg-slate-100/90 text-slate-900 font-bold"
+                      : "hover:bg-slate-50 text-slate-700 hover:text-slate-900"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Megaphone size={16} />
+                    <span>Campaigns</span>
+                  </div>
+                  <ChevronDown
+                    size={13}
+                    className={`text-slate-400 transition-transform duration-250 ${campaignsMenuOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                {campaignsMenuOpen && (
+                  <div className="pl-4 space-y-1.5 border-l-2 border-indigo-100 ml-5 mt-1 animate-fade-in">
+                    {/* Campaign Upload */}
+                    <button
+                      onClick={() => setActiveTab("campaigns")}
+                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer text-left text-[11px] ${
+                        activeTab === "campaigns"
+                          ? "bg-indigo-50 text-indigo-700 font-bold shadow-3xs"
+                          : "hover:bg-slate-50 text-slate-600 hover:text-slate-950"
+                      }`}
+                    >
+                      <Upload size={13} />
+                      <span>Campaign Upload</span>
+                    </button>
+
+                    {/* Change Log */}
+                    <button
+                      onClick={() => setActiveTab("performance")}
+                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer text-left text-[11px] ${
+                        activeTab === "performance"
+                          ? "bg-indigo-50 text-indigo-700 font-bold shadow-3xs"
+                          : "hover:bg-slate-50 text-slate-600 hover:text-slate-950"
+                      }`}
+                    >
+                      <History size={13} />
+                      <span>Change Log</span>
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* Creative Hub btn */}
               <button
@@ -922,19 +980,6 @@ export default function App() {
                 <span>Creative Performance</span>
               </button>
 
-              {/* AI Hub btn */}
-              <button
-                onClick={() => setActiveTab("ai")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "ai"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <Sparkles size={16} />
-                <span>AI</span>
-              </button>
-
               {/* Portal Leads btn */}
               <button
                 onClick={() => setActiveTab("portals")}
@@ -946,6 +991,45 @@ export default function App() {
               >
                 <Users size={16} />
                 <span>Portal Leads</span>
+              </button>
+
+              {/* Target performance comparison btn */}
+              <button
+                onClick={() => setActiveTab("comparison")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
+                  activeTab === "comparison"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <ArrowUpDown size={16} />
+                <span>Target vs Performance</span>
+              </button>
+
+              {/* Weekly Target Ledger btn */}
+              <button
+                onClick={() => setActiveTab("targets")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
+                  activeTab === "targets"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <Coins size={16} />
+                <span>Weekly Target Ledger</span>
+              </button>
+
+              {/* Day-wise Spend btn */}
+              <button
+                onClick={() => setActiveTab("daily_spend")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
+                  activeTab === "daily_spend"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <CalendarDays size={16} />
+                <span>Day-wise Spend</span>
               </button>
 
               {/* Exclusive Download Reports btn */}
@@ -974,30 +1058,17 @@ export default function App() {
                 <span>Google Sheets Sync</span>
               </button>
 
-              {/* Campaign Upload & Change Log btn */}
+              {/* AI Hub btn */}
               <button
-                onClick={() => setActiveTab("performance")}
+                onClick={() => setActiveTab("ai")}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "performance"
+                  activeTab === "ai"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                <TrendingUp size={16} />
-                <span>Campaign Upload &amp; Change Log</span>
-              </button>
-
-              {/* Weekly Target Ledger btn */}
-              <button
-                onClick={() => setActiveTab("targets")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "targets"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <Coins size={16} />
-                <span>Weekly Target Ledger</span>
+                <Sparkles size={16} />
+                <span>AI</span>
               </button>
 
               {/* Rule Configuration btn */}
@@ -1104,6 +1175,7 @@ export default function App() {
                   portalReports={portalReports}
                   onSavePerformance={handleSaveCampaignPerformance}
                   changeLogEntries={changeLogEntries}
+                  dailySpendList={dailySpendList}
                 />
               )}
               {activeTab === "campaigns" && (
@@ -1173,11 +1245,19 @@ export default function App() {
                   rolePermission={currentRolePermission}
                 />
               )}
+              {activeTab === "comparison" && (
+                <TargetPerformanceComparison
+                  targets={targetBudgets}
+                  performances={campaignPerformances}
+                />
+              )}
               {activeTab === "rules" && (
                 <RuleConfigPanel
                   ruleSetting={ruleSetting}
+                  ruleSettingsList={ruleSettingsList}
                   campaigns={mergedCampaigns}
                   onSaveRule={handleSaveRuleConfiguration}
+                  onDeleteRule={handleDeleteRuleConfiguration}
                   rolePermission={currentRolePermission}
                 />
               )}
@@ -1211,6 +1291,21 @@ export default function App() {
                   onAddInvite={handleAddInvite}
                   onDeleteInvite={handleDeleteInvite}
                   currentUserEmail={user?.email || "anonymous_sandbox_admin"}
+                />
+              )}
+              {activeTab === "daily_spend" && (
+                <DailySpendTracker
+                  dailySpendList={dailySpendList}
+                  onSave={async (entries) => {
+                    const newList = await dataService.saveDailySpends(entries);
+                    setDailySpendList(newList);
+                  }}
+                  onDelete={async (id) => {
+                    await dataService.deleteDailySpend(id);
+                    setDailySpendList(dailySpendList.filter(e => e.id !== id));
+                  }}
+                  projects={(Array.from(new Set(campaignPerformances.map(c => c.projectName).filter(Boolean))) as string[]).concat(["Grand Horizon Residence", "Vivaana", "Oakridge Estate"])}
+                  rolePermission={currentRolePermission}
                 />
               )}
             </div>

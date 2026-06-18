@@ -34,7 +34,7 @@ const setDoc = (ref: any, data: any, options?: any) => {
   const cleanedData = cleanUndefinedForFirestore(data);
   return firestoreSetDoc(ref, cleanedData, options);
 };
-import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, CampaignPerformance, Invite } from "../types";
+import { Campaign, AuditLog, Lead, CreativeAsset, CampaignReport, MetricComparison, ChangeLogEntry, PortalReportRow, TargetBudgetRow, RuleConfiguration, CampaignPerformance, Invite, DailySpendEntry } from "../types";
 
 // Key definitions for LocalStorage fallback
 const KEYS = {
@@ -50,6 +50,7 @@ const KEYS = {
   RULE_SETTINGS: "marketing_copilot_rule_settings",
   PERF_TRACKERS: "marketing_copilot_perf_trackers",
   INVITES: "marketing_copilot_invites",
+  DAILY_SPENDS: "marketing_copilot_daily_spends",
 };
 
 // Seed-level root logins
@@ -1592,24 +1593,68 @@ export const dataService = {
       }
     }
     const list = loadLocal<RuleConfiguration>(KEYS.RULE_SETTINGS, [DEFAULT_RULE_CONFIGURATION]);
-    return list[0] || DEFAULT_RULE_CONFIGURATION;
+    return list.find(r => r.id === "global") || list[0] || DEFAULT_RULE_CONFIGURATION;
+  },
+
+  async getRuleConfigurations(): Promise<RuleConfiguration[]> {
+    if (isFirebaseEnabled) {
+      try {
+        const fetchPromise = (async () => {
+          const q = getCollectionRef("rule_settings");
+          const snapshot = await getDocs(q);
+          const docsList = snapshot.docs;
+          if (docsList.length === 0) {
+            console.log("[FIREBASE] Seed rule default settings...");
+            await setDoc(getDocRef("rule_settings", "global"), DEFAULT_RULE_CONFIGURATION);
+            return [DEFAULT_RULE_CONFIGURATION];
+          }
+          return docsList.map(d => ({ id: d.id, ...d.data() }) as RuleConfiguration);
+        })();
+        return await withTimeout(fetchPromise, [DEFAULT_RULE_CONFIGURATION]);
+      } catch (err) {
+        console.error("Firestore getRuleConfigurations error, continuing with local fallback:", err);
+      }
+    }
+    return loadLocal<RuleConfiguration>(KEYS.RULE_SETTINGS, [DEFAULT_RULE_CONFIGURATION]);
+  },
+
+  async deleteRuleConfiguration(id: string): Promise<void> {
+    if (isFirebaseEnabled) {
+      try {
+        const docRef = getDocRef("rule_settings", id);
+        await deleteDoc(docRef);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `rule_settings/${id}`);
+      }
+    } else {
+      const existing = loadLocal<RuleConfiguration>(KEYS.RULE_SETTINGS, [DEFAULT_RULE_CONFIGURATION]);
+      const filtered = existing.filter(r => r.id !== id);
+      saveLocal(KEYS.RULE_SETTINGS, filtered);
+    }
   },
 
   async saveRuleConfiguration(rule: RuleConfiguration): Promise<RuleConfiguration> {
     const finalRule: RuleConfiguration = {
       ...rule,
-      id: "global",
+      id: rule.id || "global",
       updatedAt: new Date().toISOString(),
     };
 
     if (isFirebaseEnabled) {
       try {
-        await setDoc(getDocRef("rule_settings", "global"), finalRule);
+        await setDoc(getDocRef("rule_settings", finalRule.id), finalRule);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, "rule_settings/global");
+        handleFirestoreError(err, OperationType.WRITE, `rule_settings/${finalRule.id}`);
       }
     } else {
-      saveLocal(KEYS.RULE_SETTINGS, [finalRule]);
+      const existing = loadLocal<RuleConfiguration>(KEYS.RULE_SETTINGS, [DEFAULT_RULE_CONFIGURATION]);
+      const idx = existing.findIndex(r => r.id === finalRule.id);
+      if (idx !== -1) {
+        existing[idx] = finalRule;
+      } else {
+        existing.push(finalRule);
+      }
+      saveLocal(KEYS.RULE_SETTINGS, existing);
     }
     return finalRule;
   },
@@ -1819,6 +1864,86 @@ export const dataService = {
         await withWriteTimeout(deleteDoc(getDocRef("invites", id)), `invites/${id}`);
       } catch (err) {
         console.warn("[FIREBASE] deleteInvite Firestore sync bypassed, using local cache fallback:", err);
+      }
+    }
+    return true;
+  },
+
+  async getDailySpends(): Promise<DailySpendEntry[]> {
+    let list: DailySpendEntry[] = [];
+    if (isFirebaseEnabled) {
+      try {
+        const fetchPromise = (async () => {
+          const q = query(getCollectionRef("daily_spends"));
+          const snapshot = await getDocs(q);
+          const results: DailySpendEntry[] = [];
+          snapshot.forEach((docRef) => {
+            results.push({ id: docRef.id, ...docRef.data() } as DailySpendEntry);
+          });
+          return results;
+        })();
+        const cloudList = await withTimeout(fetchPromise, null);
+        if (cloudList !== null) {
+          list = cloudList;
+        } else {
+          list = loadLocal<DailySpendEntry>(KEYS.DAILY_SPENDS, []);
+        }
+      } catch (err) {
+        console.error("Firestore getDailySpends error, continuing with local fallback:", err);
+        list = loadLocal<DailySpendEntry>(KEYS.DAILY_SPENDS, []);
+      }
+    } else {
+      list = loadLocal<DailySpendEntry>(KEYS.DAILY_SPENDS, []);
+    }
+    return list;
+  },
+
+  async saveDailySpends(entries: DailySpendEntry[]): Promise<DailySpendEntry[]> {
+    const list = loadLocal<DailySpendEntry>(KEYS.DAILY_SPENDS, []);
+    
+    for (const entry of entries) {
+      const isNew = !entry.id || entry.id.length === 0;
+      const activeId = isNew ? `${entry.date}_${entry.project}_${entry.medium}`.replace(/[\s\(\):]/g, "_") : entry.id;
+      const finalEntry: DailySpendEntry = {
+        ...entry,
+        id: activeId,
+        createdAt: entry.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Update in local cache
+      const idx = list.findIndex((c) => c.id === finalEntry.id);
+      if (idx !== -1) {
+        list[idx] = finalEntry;
+      } else {
+        list.unshift(finalEntry);
+      }
+
+      // Sync to Firestore if enabled
+      if (isFirebaseEnabled) {
+        try {
+          const cleanedData = cleanUndefinedForFirestore(finalEntry);
+          await withWriteTimeout(setDoc(getDocRef("daily_spends", activeId), cleanedData), `daily_spends/${activeId}`);
+        } catch (err) {
+          console.warn("[FIREBASE] saveDailySpend Firestore sync bypassed, using local cache:", err);
+        }
+      }
+    }
+
+    saveLocal(KEYS.DAILY_SPENDS, list);
+    return list;
+  },
+
+  async deleteDailySpend(id: string): Promise<boolean> {
+    const list = loadLocal<DailySpendEntry>(KEYS.DAILY_SPENDS, []);
+    const filtered = list.filter((c) => c.id !== id);
+    saveLocal(KEYS.DAILY_SPENDS, filtered);
+
+    if (isFirebaseEnabled) {
+      try {
+        await withWriteTimeout(deleteDoc(getDocRef("daily_spends", id)), `daily_spends/${id}`);
+      } catch (err) {
+        console.warn("[FIREBASE] deleteDailySpend Firestore sync bypassed, using local cache:", err);
       }
     }
     return true;

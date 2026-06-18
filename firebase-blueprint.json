@@ -238,6 +238,22 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when invite was created" }
       },
       "required": ["id", "email", "role", "invitedBy", "status", "createdAt"]
+    },
+    "dailySpendEntry": {
+      "title": "DailySpendEntry",
+      "description": "Daily marketing spend and leads for a specific project and medium.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique key: e.g. date_project_medium" },
+        "date": { "type": "string", "format": "date", "description": "Calendar date mapping" },
+        "project": { "type": "string", "description": "Name of the target project" },
+        "medium": { "type": "string", "description": "Marketing channel / medium name (e.g. Meta Ad Acc)" },
+        "spend": { "type": "number", "description": "Sourced spend amount" },
+        "leads": { "type": "integer", "description": "Number of leads generated" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "date", "project", "medium", "spend", "leads"]
     }
   },
   "firestore": {
@@ -288,6 +304,10 @@
     "invites": {
       "schema": "invite",
       "description": "Team role email invitations log."
+    },
+    "daily_spends": {
+      "schema": "dailySpendEntry",
+      "description": "Daily marketing spend and lead logs for projects and platforms."
     }
   }
 }
