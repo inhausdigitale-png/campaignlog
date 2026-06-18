@@ -1306,6 +1306,7 @@ export default function App() {
                     setDailySpendList(dailySpendList.filter(e => e.id !== id));
                   }}
                   projects={(Array.from(new Set(campaignPerformances.map(c => c.projectName).filter(Boolean))) as string[]).concat(["Grand Horizon Residence", "Vivaana", "Oakridge Estate"])}
+                  adAccounts={Array.from(new Set(campaignPerformances.map(c => c.adAccountId).filter(Boolean))) as string[]}
                   rolePermission={currentRolePermission}
                 />
               )}

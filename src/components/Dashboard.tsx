@@ -775,20 +775,36 @@ export default function Dashboard({
               </div>
 
               {/* Chart Tab Navigation */}
-              <div className="flex flex-wrap gap-1.5 bg-slate-8ba p-1 rounded-lg border border-slate-800/80 bg-slate-800/60 max-w-max self-start md:self-auto">
+              <div className="flex flex-wrap gap-1.5 p-1 rounded-lg border border-slate-800/80 bg-slate-800/60 max-w-max self-start md:self-auto">
                 <button
                   type="button"
                   onClick={() => {
                     setActiveAnalysisTab("channels");
+                    setGroupedBy("project");
                     setSimulatedBudgetChange(0);
                   }}
                   className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                    activeAnalysisTab === "channels"
+                    activeAnalysisTab === "channels" && groupedBy === "project"
                       ? "bg-indigo-600 text-white shadow-xs"
-                      : "text-slate-450 text-slate-300 hover:text-white hover:bg-slate-700/50"
+                      : "text-slate-350 hover:text-white hover:bg-slate-700/50 cursor-pointer"
                   }`}
                 >
-                  📊 Channel Grouping
+                  🏢 Project-wise
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveAnalysisTab("channels");
+                    setGroupedBy("platform");
+                    setSimulatedBudgetChange(0);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    activeAnalysisTab === "channels" && groupedBy === "platform"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-slate-350 hover:text-white hover:bg-slate-700/50 cursor-pointer"
+                  }`}
+                >
+                  📢 Medium-wise
                 </button>
                 <button
                   type="button"
@@ -799,7 +815,7 @@ export default function Dashboard({
                   className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
                     activeAnalysisTab === "campaigns"
                       ? "bg-indigo-600 text-white shadow-xs"
-                      : "text-slate-450 text-slate-300 hover:text-white hover:bg-slate-700/50"
+                      : "text-slate-350 hover:text-white hover:bg-slate-700/50 cursor-pointer"
                   }`}
                 >
                   🏆 Campaigns Leaderboard
@@ -855,31 +871,10 @@ export default function Dashboard({
                 {/* Channel-Specific toggles */}
                 {activeAnalysisTab === "channels" && (
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-slate-450 uppercase tracking-wide">Group By:</span>
-                    <div className="inline-flex bg-slate-100 p-1 rounded-lg border border-slate-200">
-                      <button
-                        type="button"
-                        onClick={() => setGroupedBy("platform")}
-                        className={`px-2.5 py-1 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
-                          groupedBy === "platform"
-                            ? "bg-white text-indigo-750 shadow-3xs"
-                            : "text-slate-500 hover:text-slate-805"
-                        }`}
-                      >
-                        Platforms
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGroupedBy("project")}
-                        className={`px-2.5 py-1 text-[10.5px] font-bold rounded-md transition-all cursor-pointer ${
-                          groupedBy === "project"
-                            ? "bg-white text-indigo-750 shadow-3xs"
-                            : "text-slate-500 hover:text-slate-805"
-                        }`}
-                      >
-                        Projects
-                      </button>
-                    </div>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Perspective:</span>
+                    <span className="px-2.5 py-1 text-[10.5px] font-black uppercase tracking-wider rounded-md bg-indigo-50 text-indigo-750 border border-indigo-100 flex items-center gap-1">
+                      {groupedBy === "project" ? "🏢 Project-Wise" : "📢 Medium-Wise (Platform)"}
+                    </span>
                   </div>
                 )}
 
@@ -935,11 +930,11 @@ export default function Dashboard({
                 {/* Header title */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div>
-                    <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider font-display shrink-0 flex items-center gap-1.5">
+                    <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider font-display shrink-0 flex items-center gap-1.5 flex-wrap">
                       <span>📈 Active Analytics:</span>
-                      <span className="text-indigo-650 text-indigo-600 font-extrabold normal-case font-sans">
+                      <span className="text-indigo-600 font-extrabold normal-case font-sans">
                         {activeAnalysisTab === "channels" 
-                          ? `Performance Channels grouped by ${groupedBy === "platform" ? "Ad Platform" : "Real Estate Projects"}`
+                          ? (groupedBy === "project" ? "🏢 Project-Wise Asset Performance Ledger" : "📢 Medium-Wise / Platform Performance Ledger")
                           : activeAnalysisTab === "campaigns"
                             ? `Campaign Leaderboarding Matrix (Sorted by ${getMetricLabel(primaryMetric)})`
                             : activeAnalysisTab === "efficiency"
@@ -967,7 +962,7 @@ export default function Dashboard({
                 </div>
 
                 {/* Main chart viewport container */}
-                <div className={`${activeAnalysisTab === "dailySpends" ? "h-auto" : "h-80"} w-full text-xs`}>
+                <div className={`${(activeAnalysisTab === "dailySpends" || activeAnalysisTab === "channels") ? "h-auto" : "h-80"} w-full text-xs`}>
                   {activeAnalysisTab === "dailySpends" ? (
                     // Day-wise spends grid view inside the Dashboard
                     <div className="space-y-4 animate-fade-in w-full text-slate-800">
@@ -1053,7 +1048,7 @@ export default function Dashboard({
                       <p className="text-[11px] text-slate-400">Please adjust your filters on the dashboard top header.</p>
                     </div>
                   ) : activeAnalysisTab === "channels" ? (() => {
-                    // Render Tab 1: Channels
+                    // Render Tab 1: Channels (handles both Project-wise and Medium-wise)
                     const groupedDataMap = filteredCampaigns.reduce((acc, c) => {
                       const key = groupedBy === "platform" ? c.platform : getProjectName(c);
                       if (!acc[key]) {
@@ -1078,40 +1073,93 @@ export default function Dashboard({
                     });
 
                     return (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={channelChartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                          <YAxis yAxisId="left" stroke={getMetricColor(primaryMetric)} fontSize={10} tickLine={false} />
-                          {secondaryMetric !== "none" && (
-                            <YAxis yAxisId="right" orientation="right" stroke={getMetricColor(secondaryMetric, true)} fontSize={10} tickLine={false} />
-                          )}
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: "#0f172a", borderRadius: "8px", border: "none", color: "#fff" }}
-                            formatter={(value, name) => [[`${typeof value === 'number' && name.toString().includes("₹") ? "₹" : ""}${Number(value).toLocaleString("en-IN")}`], name]} 
-                          />
-                          <Bar 
-                            yAxisId="left" 
-                            dataKey={primaryMetric} 
-                            name={`${getMetricLabel(primaryMetric)}`} 
-                            fill={getMetricColor(primaryMetric)} 
-                            radius={[6, 6, 0, 0]} 
-                            className="transition-all duration-300 hover:opacity-85 cursor-pointer"
-                          />
-                          {secondaryMetric !== "none" && (
-                            <Line 
-                              yAxisId="right" 
-                              type="monotone" 
-                              dataKey={secondaryMetric} 
-                              name={`${getMetricLabel(secondaryMetric)}`} 
-                              stroke={getMetricColor(secondaryMetric, true)} 
-                              strokeWidth={2.5}
-                              dot={{ r: 4, strokeWidth: 1.5, fill: "#fff" }}
-                              activeDot={{ r: 6 }}
-                            />
-                          )}
-                        </BarChart>
-                      </ResponsiveContainer>
+                      <div className="space-y-6 animate-fade-in w-full text-slate-800">
+                        {/* Interactive Bar Chart */}
+                        <div className="h-64 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={channelChartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                              <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                              <YAxis yAxisId="left" stroke={getMetricColor(primaryMetric)} fontSize={10} tickLine={false} />
+                              {secondaryMetric !== "none" && (
+                                <YAxis yAxisId="right" orientation="right" stroke={getMetricColor(secondaryMetric, true)} fontSize={10} tickLine={false} />
+                              )}
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: "#0f172a", borderRadius: "8px", border: "none", color: "#fff" }}
+                                formatter={(value, name) => [[`${typeof value === 'number' && name.toString().includes("₹") ? "₹" : ""}${Number(value).toLocaleString("en-IN")}`], name]} 
+                              />
+                              <Bar 
+                                yAxisId="left" 
+                                dataKey={primaryMetric} 
+                                name={`${getMetricLabel(primaryMetric)}`} 
+                                fill={getMetricColor(primaryMetric)} 
+                                radius={[6, 6, 0, 0]} 
+                                className="transition-all duration-300 hover:opacity-85 cursor-pointer"
+                              />
+                              {secondaryMetric !== "none" && (
+                                <Line 
+                                  yAxisId="right" 
+                                  type="monotone" 
+                                  dataKey={secondaryMetric} 
+                                  name={`${getMetricLabel(secondaryMetric)}`} 
+                                  stroke={getMetricColor(secondaryMetric, true)} 
+                                  strokeWidth={2.5}
+                                  dot={{ r: 4, strokeWidth: 1.5, fill: "#fff" }}
+                                  activeDot={{ r: 6 }}
+                                />
+                              )}
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        {/* Breakdown Ledger Table */}
+                        <div className="space-y-2 pt-4 border-t border-slate-100">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider font-display shrink-0 flex items-center gap-1.5">
+                              <span>📂 Aggregated Breakdown List ({groupedBy === "project" ? "Project-wise" : "Medium-wise"})</span>
+                            </h4>
+                            <span className="text-[10px] text-slate-400 font-bold font-mono">Real-time Performance Summaries</span>
+                          </div>
+
+                          <div className="overflow-x-auto rounded-xl border border-slate-200/50 max-h-[250px]">
+                            <table className="w-full text-left text-xs border-collapse bg-white">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-650 font-bold border-b border-slate-150 sticky top-0">
+                                  <th className="p-2.5 pl-3">{groupedBy === "project" ? "Real Estate Project" : "Marketing Medium / Platform"}</th>
+                                  <th className="p-2.5 text-right font-mono bg-slate-55">Target Budget</th>
+                                  <th className="p-2.5 text-right font-mono bg-indigo-50/20 text-indigo-900 border-x border-slate-200/40">Amount Spent</th>
+                                  <th className="p-2.5 text-right">Leads Volume</th>
+                                  <th className="p-2.5 text-right text-emerald-850">CPA (₹/Lead)</th>
+                                  <th className="p-2.5 text-right">Clicks</th>
+                                  <th className="p-2.5 text-right pr-3">CTR (%)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 font-sans">
+                                {channelChartData.map((row: any, idx: number) => {
+                                  const burnPercent = row.budget > 0 ? (row.spend / row.budget) * 100 : 0;
+                                  return (
+                                    <tr key={idx} className="hover:bg-slate-50/80 transition-all font-medium text-slate-700">
+                                      <td className="p-2.5 pl-3 text-slate-900 font-extrabold flex items-center gap-1.5">
+                                        <span className={`w-2 h-2 rounded-full ${groupedBy === 'project' ? 'bg-indigo-600' : 'bg-emerald-500'}`} />
+                                        {row.name}
+                                      </td>
+                                      <td className="p-2.5 text-right font-mono text-slate-500">₹{Math.round(row.budget).toLocaleString("en-IN")}</td>
+                                      <td className="p-2.5 text-right font-mono font-extrabold text-indigo-700 bg-indigo-50/20 border-x border-slate-200/20">
+                                        ₹{Math.round(row.spend).toLocaleString("en-IN")}
+                                        <span className="block text-[9px] font-sans font-medium text-slate-400 normal-case">{burnPercent.toFixed(0)}% burn</span>
+                                      </td>
+                                      <td className="p-2.5 text-right font-mono font-black text-slate-900">{row.conversions.toLocaleString("en-IN")}</td>
+                                      <td className="p-2.5 text-right font-mono font-bold text-emerald-600">₹{Math.round(row.cpa).toLocaleString("en-IN")}</td>
+                                      <td className="p-2.5 text-right font-mono font-medium text-slate-500">{row.clicks.toLocaleString("en-IN")}</td>
+                                      <td className="p-2.5 text-right font-mono font-bold text-indigo-950 pr-3">{row.ctr}%</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
                     );
                   })() : activeAnalysisTab === "campaigns" ? (() => {
                     // Render Tab 2: Campaigns Leaderboard

@@ -289,6 +289,7 @@ export interface DailySpendEntry {
   leads: number;
   createdAt: string;
   updatedAt?: string;
+  adAccount?: string;
 }
 
 

@@ -8,6 +8,7 @@ interface DailySpendTrackerProps {
   onDelete: (id: string) => Promise<void>;
   projects: string[];
   rolePermission?: UserRolePermission;
+  adAccounts?: string[];
 }
 
 export default function DailySpendTracker({
@@ -30,7 +31,8 @@ export default function DailySpendTracker({
     canManageTargets: true,
     canDeleteTargets: true,
     canManageRules: true
-  }
+  },
+  adAccounts = []
 }: DailySpendTrackerProps) {
   const [activeSubTab, setActiveSubTab] = useState<"report" | "database" | "import" | "settings">("report");
   const [reportViewMode, setReportViewMode] = useState<"date" | "account">("date");
@@ -59,9 +61,21 @@ export default function DailySpendTracker({
     return ["Meta Ad Acc", "Projectwise Acc", "Google Ads", "LinkedIn Ads", "TikTok Ads"];
   });
 
+  const [customAdAccounts, setCustomAdAccounts] = useState<string[]>(() => {
+    const saved = localStorage.getItem("marketing_copilot_custom_ad_accounts");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return ["act_40391039 (Meta Direct)", "act_20938491 (Google Ads)", "act_102948192 (LinkedIn Corp)", "act_883019284 (In-house)"];
+  });
+
   // Local state for settings panel inputs
   const [newProjectInput, setNewProjectInput] = useState("");
   const [newMediumInput, setNewMediumInput] = useState("");
+  const [newAdAccountInput, setNewAdAccountInput] = useState("");
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null);
 
@@ -74,6 +88,10 @@ export default function DailySpendTracker({
     localStorage.setItem("marketing_copilot_custom_mediums", JSON.stringify(customMediums));
   }, [customMediums]);
 
+  useEffect(() => {
+    localStorage.setItem("marketing_copilot_custom_ad_accounts", JSON.stringify(customAdAccounts));
+  }, [customAdAccounts]);
+
   // Pivot Medium Configurations (combining explicit custom mediums & database values)
   const availableMediums = useMemo(() => {
     const set = new Set(customMediums);
@@ -82,6 +100,15 @@ export default function DailySpendTracker({
     });
     return Array.from(set);
   }, [customMediums, dailySpendList]);
+
+  // Unique Ad Accounts combining props, custom, and logs
+  const uniqueAdAccounts = useMemo(() => {
+    const set = new Set([...adAccounts, ...customAdAccounts]);
+    dailySpendList.forEach(e => {
+      if (e.adAccount) set.add(e.adAccount);
+    });
+    return Array.from(set);
+  }, [adAccounts, customAdAccounts, dailySpendList]);
 
   const [selectedMedium, setSelectedMedium] = useState<string>("");
 
@@ -107,6 +134,9 @@ export default function DailySpendTracker({
   });
   const [formMedium, setFormMedium] = useState<string>(() => {
     return customMediums[0] || "Meta Ad Acc";
+  });
+  const [formAdAccount, setFormAdAccount] = useState<string>(() => {
+    return uniqueAdAccounts[0] || "act_40391039 (Meta Direct)";
   });
   const [formSpend, setFormSpend] = useState<string>("");
   const [formLeads, setFormLeads] = useState<string>("");
@@ -442,7 +472,7 @@ export default function DailySpendTracker({
       return;
     }
 
-    const uniqueId = `entry_${formDate}_${formProject}_${formMedium}`.replace(/[\s\(\):]/g, "_").toLowerCase();
+    const uniqueId = `entry_${formDate}_${formProject}_${formMedium}_${formAdAccount || ""}`.replace(/[\s\(\):]/g, "_").toLowerCase();
 
     // Check if entry already exists in seed/active state to prompt or override
     const newEntry: DailySpendEntry = {
@@ -452,7 +482,8 @@ export default function DailySpendTracker({
       medium: formMedium,
       spend: spendNum,
       leads: leadsNum,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      adAccount: formAdAccount || undefined
     };
 
     try {
@@ -464,6 +495,9 @@ export default function DailySpendTracker({
       }
       if (!customMediums.includes(formMedium)) {
         setCustomMediums(prev => [...prev, formMedium]);
+      }
+      if (formAdAccount && !customAdAccounts.includes(formAdAccount)) {
+        setCustomAdAccounts(prev => [...prev, formAdAccount]);
       }
 
       setFormSuccess(true);
@@ -533,15 +567,40 @@ export default function DailySpendTracker({
     setSettingsSuccess(`Successfully removed medium "${medToRemove}"`);
   };
 
+  const handleAddAdAccountSetting = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSettingsError(null);
+    setSettingsSuccess(null);
+    const trimmed = newAdAccountInput.trim();
+    if (!trimmed) return;
+    if (customAdAccounts.includes(trimmed)) {
+      setSettingsError(`The Ad Account "${trimmed}" is already on your tracking list.`);
+      return;
+    }
+    setCustomAdAccounts(prev => [...prev, trimmed]);
+    setNewAdAccountInput("");
+    setSettingsSuccess(`Successfully added Ad Account "${trimmed}"`);
+  };
+
+  const handleRemoveAdAccountSetting = (acctToRemove: string) => {
+    setSettingsError(null);
+    setSettingsSuccess(null);
+    setCustomAdAccounts(prev => prev.filter(a => a !== acctToRemove));
+    if (formAdAccount === acctToRemove) {
+      setFormAdAccount(customAdAccounts.find(a => a !== acctToRemove) || "");
+    }
+    setSettingsSuccess(`Successfully removed Ad Account "${acctToRemove}"`);
+  };
+
   // Preload CSV template for users to load
   const loadCsvTemplate = () => {
-    const sample = `Date,Project,Medium,Spend,Leads
-2026-06-03,Grand Horizon Residence,Meta Ad Acc,1450.50,11
-2026-06-03,Grand Horizon Residence,Projectwise Acc,2380.00,14
-2026-06-04,Grand Horizon Residence,Meta Ad Acc,1390.20,9
-2026-06-04,Grand Horizon Residence,Projectwise Acc,2110.50,16
-2026-06-03,Vivaana,Meta Ad Acc,890.00,5
-2026-06-03,Vivaana,Projectwise Acc,1740.00,10`;
+    const sample = `Date,Project,Medium,AdAccount,Spend,Leads
+2026-06-03,Grand Horizon Residence,Meta Ad Acc,act_40391039 (Meta Direct),1450.50,11
+2026-06-03,Grand Horizon Residence,Projectwise Acc,act_883019284 (In-house),2380.00,14
+2026-06-04,Grand Horizon Residence,Meta Ad Acc,act_40391039 (Meta Direct),1390.20,9
+2026-06-04,Grand Horizon Residence,Projectwise Acc,act_883019284 (In-house),2110.50,16
+2026-06-03,Vivaana,Meta Ad Acc,act_40391039 (Meta Direct),890.00,5
+2026-06-03,Vivaana,Projectwise Acc,act_883019284 (In-house),1740.00,10`;
     setCsvText(sample);
     setCsvFeedback({ status: "success", message: "Sample CSV template preloaded successfully!" });
   };
@@ -566,6 +625,7 @@ export default function DailySpendTracker({
       const dateIdx = headers.findIndex(h => h.includes("date"));
       const projIdx = headers.findIndex(h => h.includes("project"));
       const medIdx = headers.findIndex(h => h.includes("medium") || h.includes("channel") || h.includes("platform"));
+      const acctIdx = headers.findIndex(h => h.includes("adaccount") || h.includes("account"));
       const spendIdx = headers.findIndex(h => h.includes("spend") || h.includes("cost") || h.includes("amount"));
       const leadsIdx = headers.findIndex(h => h.includes("leads") || h.includes("conversions"));
 
@@ -594,6 +654,7 @@ export default function DailySpendTracker({
         const rawDate = cols[dateIdx];
         const project = cols[projIdx];
         const medium = cols[medIdx];
+        const adAccountVal = acctIdx !== -1 && cols[acctIdx] ? cols[acctIdx] : "";
         const spendVal = parseFloat(cols[spendIdx]);
         const leadsVal = parseInt(cols[leadsIdx], 10);
 
@@ -612,7 +673,7 @@ export default function DailySpendTracker({
           }
         }
 
-        const id = `entry_${formattedDate}_${project}_${medium}`.replace(/[\s\(\):]/g, "_").toLowerCase();
+        const id = `entry_${formattedDate}_${project}_${medium}_${adAccountVal || ""}`.replace(/[\s\(\):]/g, "_").toLowerCase();
 
         parsedEntries.push({
           id,
@@ -621,7 +682,8 @@ export default function DailySpendTracker({
           medium,
           spend: spendVal,
           leads: leadsVal,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          adAccount: adAccountVal || undefined
         });
       }
 
@@ -635,6 +697,7 @@ export default function DailySpendTracker({
       // Auto-register unique projects and mediums found in CSV
       const newProjs = Array.from(new Set(parsedEntries.map(e => e.project)));
       const newMeds = Array.from(new Set(parsedEntries.map(e => e.medium)));
+      const newAdAccs = Array.from(new Set(parsedEntries.map(e => e.adAccount).filter(Boolean))) as string[];
       
       setCustomProjects(prev => {
         const next = [...prev];
@@ -647,6 +710,13 @@ export default function DailySpendTracker({
         const next = [...prev];
         newMeds.forEach(m => {
           if (!next.includes(m)) next.push(m);
+        });
+        return next;
+      });
+      setCustomAdAccounts(prev => {
+        const next = [...prev];
+        newAdAccs.forEach(a => {
+          if (!next.includes(a)) next.push(a);
         });
         return next;
       });
@@ -1201,6 +1271,32 @@ export default function DailySpendTracker({
                 </div>
               </div>
 
+              {/* Ad Account Input */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ad Account Name / ID</label>
+                <div className="space-y-1">
+                  <select
+                    value={formAdAccount}
+                    onChange={(e) => setFormAdAccount(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50 focus:bg-white text-slate-800"
+                  >
+                    {uniqueAdAccounts.map((acct) => (
+                      <option key={acct} value={acct}>{acct}</option>
+                    ))}
+                    <option value="__custom__">+ Enter Custom Ad Account</option>
+                  </select>
+                  {formAdAccount === "__custom__" && (
+                    <input
+                      type="text"
+                      placeholder="e.g. act_77182939"
+                      onChange={(e) => setFormAdAccount(e.target.value)}
+                      className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50 text-slate-800"
+                      required
+                    />
+                  )}
+                </div>
+              </div>
+
               {/* Spend and Leads */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -1260,6 +1356,7 @@ export default function DailySpendTracker({
                     <th className="p-3 text-center">Date</th>
                     <th className="p-3">Project</th>
                     <th className="p-3">Medium</th>
+                    <th className="p-3">Ad Account</th>
                     <th className="p-3 text-right">Spend</th>
                     <th className="p-3 text-right">Leads</th>
                     <th className="p-3 text-center">Actions</th>
@@ -1276,6 +1373,15 @@ export default function DailySpendTracker({
                         }`}>
                           {entry.medium}
                         </span>
+                      </td>
+                      <td className="p-3 text-slate-600">
+                        {entry.adAccount ? (
+                          <span className="font-mono text-[10.5px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                            {entry.adAccount}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">—</span>
+                        )}
                       </td>
                       <td className="p-3 text-right font-medium text-slate-900 font-mono">{formatINRDecimals(entry.spend)}</td>
                       <td className="p-3 text-right text-slate-600 font-mono">{entry.leads}</td>
@@ -1446,7 +1552,7 @@ export default function DailySpendTracker({
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Project List Configuration */}
             <div className="p-5 bg-slate-50/50 rounded-xl border border-slate-200/80 space-y-4">
               <div className="flex items-center justify-between">
@@ -1541,6 +1647,56 @@ export default function DailySpendTracker({
               </div>
               <p className="text-[10px] text-slate-400 leading-relaxed">
                 * Removing channel channels prevents them from registering in reports and form lists. Essential defaults like `Meta Ad Acc` are highly recommended.
+              </p>
+            </div>
+
+            {/* Ad Accounts configuration */}
+            <div className="p-5 bg-slate-50/50 rounded-xl border border-slate-200/80 space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-extrabold uppercase text-slate-500 tracking-wider">Dynamic Ad Accounts</h4>
+                <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">
+                  {customAdAccounts.length} defined
+                </span>
+              </div>
+
+              {/* Form to add */}
+              <form onSubmit={handleAddAdAccountSetting} className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. act_712891 (Meta)"
+                  value={newAdAccountInput}
+                  onChange={(e) => setNewAdAccountInput(e.target.value)}
+                  className="flex-1 text-xs border border-slate-200 rounded-lg p-2.5 bg-white text-slate-800 focus:outline-indigo-500"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="px-3.5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus size={14} /> Add
+                </button>
+              </form>
+
+              {/* Scrollable list of accounts */}
+              <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 bg-white rounded-lg border border-slate-100">
+                {customAdAccounts.map((acct) => (
+                  <div key={acct} className="p-3 flex items-center justify-between text-xs hover:bg-slate-50/60 transition-all text-slate-800 font-medium">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+                      <span>{acct}</span>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveAdAccountSetting(acct)}
+                      className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-red-50 transition-all cursor-pointer"
+                      title={`Remove Ad Account '${acct}' from the options`}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                * Configuring custom Ad Accounts will let you select them inside your daily spend forms to align spends with platform account structures.
               </p>
             </div>
           </div>
