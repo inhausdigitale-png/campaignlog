@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { DailySpendEntry, UserRolePermission } from "../types";
-import { Plus, Trash2, Calendar, Coins, TrendingUp, CheckSquare, Edit, Save, ArrowLeftRight, Percent, Filter, Layers, Upload, Download, Sparkles, CheckCircle, Info, Sliders, X } from "lucide-react";
+import { Plus, Trash2, Calendar, Coins, TrendingUp, CheckSquare, Edit, Save, ArrowLeftRight, Percent, Filter, Layers, Upload, Download, Sparkles, CheckCircle, Info, Sliders, X, RefreshCw, AlertTriangle, Link, ShieldAlert, Check, Lock, Unlock } from "lucide-react";
 
 interface DailySpendTrackerProps {
   dailySpendList: DailySpendEntry[];
@@ -34,7 +34,7 @@ export default function DailySpendTracker({
   },
   adAccounts = []
 }: DailySpendTrackerProps) {
-  const [activeSubTab, setActiveSubTab] = useState<"report" | "database" | "import" | "settings">("report");
+  const [activeSubTab, setActiveSubTab] = useState<"report" | "database" | "import" | "sync" | "settings">("report");
   const [reportViewMode, setReportViewMode] = useState<"date" | "account">("date");
   
   // Custom projects / mediums loaded from localStorage with deep props fallbacks
@@ -71,6 +71,197 @@ export default function DailySpendTracker({
     }
     return ["act_40391039 (Meta Direct)", "act_20938491 (Google Ads)", "act_102948192 (LinkedIn Corp)", "act_883019284 (In-house)"];
   });
+
+  // Meta and Google Sync States
+  const [syncPlatform, setSyncPlatform] = useState<"meta" | "google">("meta");
+  const [syncing, setSyncing] = useState<boolean>(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
+  
+  // Storage of active session tokens
+  const [syncMetaToken, setSyncMetaToken] = useState<string | null>(() => localStorage.getItem("sync_meta_access_token"));
+  const [syncGoogleToken, setSyncGoogleToken] = useState<string | null>(() => localStorage.getItem("sync_google_access_token"));
+  
+  // Date selection for sync
+  const [syncStartDate, setSyncStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split("T")[0];
+  });
+  const [syncEndDate, setSyncEndDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  
+  // Fetched results for preview/mapping
+  const [syncAdAccounts, setSyncAdAccounts] = useState<Array<{id: string, name: string}>>([]);
+  const [selectedSyncAccount, setSelectedSyncAccount] = useState<string>("");
+  const [fetchedCampaignSpends, setFetchedCampaignSpends] = useState<any[]>([]);
+  const [isDemoSync, setIsDemoSync] = useState<boolean>(true);
+  
+  // Dynamic mapping: platform project name mapped to workspace project name
+  const [projectMappings, setProjectMappings] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (syncMetaToken) {
+      localStorage.setItem("sync_meta_access_token", syncMetaToken);
+    } else {
+      localStorage.removeItem("sync_meta_access_token");
+    }
+  }, [syncMetaToken]);
+
+  useEffect(() => {
+    if (syncGoogleToken) {
+      localStorage.setItem("sync_google_access_token", syncGoogleToken);
+    } else {
+      localStorage.removeItem("sync_google_access_token");
+    }
+  }, [syncGoogleToken]);
+
+  // OAuth success listener
+  useEffect(() => {
+    const handleOauthMessage = (event: MessageEvent) => {
+      const origin = event.origin;
+      if (!origin.endsWith(".run.app") && !origin.includes("localhost")) {
+        return;
+      }
+      
+      if (event.data?.type === "GOOGLE_ADS_AUTH_SUCCESS") {
+        const token = event.data.accessToken;
+        setSyncGoogleToken(token);
+        setSyncSuccess("Successfully authenticated working Google Ads connection!");
+        setSyncError(null);
+      } else if (event.data?.type === "META_ADS_AUTH_SUCCESS") {
+        const token = event.data.accessToken;
+        setSyncMetaToken(token);
+        setSyncSuccess("Successfully authenticated working Meta Ads connection!");
+        setSyncError(null);
+      }
+    };
+
+    window.addEventListener("message", handleOauthMessage);
+    return () => window.removeEventListener("message", handleOauthMessage);
+  }, []);
+
+  const triggerPlatformOauth = async () => {
+    setSyncError(null);
+    setSyncSuccess(null);
+    try {
+      const endpoint = syncPlatform === "meta" ? "/api/auth/meta-ads/url" : "/api/auth/google-ads/url";
+      const response = await fetch(endpoint);
+      if (!response.ok) throw new Error("Failed to construct authorization channel.");
+      
+      const data = await response.json();
+      
+      const popup = window.open(
+        data.url,
+        syncPlatform === "meta" ? "meta_ads_oauth" : "google_ads_oauth",
+        "width=560,height=680,resizable=yes,scrollbars=yes"
+      );
+
+      if (!popup) {
+        throw new Error("Popup blocked by your browser. Please allow popup access in address bar to login.");
+      }
+    } catch (err: any) {
+      setSyncError(err.message || "OAuth login error occurred.");
+    }
+  };
+
+  const fetchSpendsFromPlatform = async () => {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+    try {
+      const token = syncPlatform === "meta" ? syncMetaToken : syncGoogleToken;
+      if (!token) {
+        throw new Error(`Please connect your ${syncPlatform === "meta" ? "Meta" : "Google"} account before invoking sync.`);
+      }
+
+      const endpoint = syncPlatform === "meta" ? "/api/sync/meta-ads" : "/api/sync/google-ads";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accessToken: token,
+          startDate: syncStartDate,
+          endDate: syncEndDate,
+          isDemo: isDemoSync
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load channel campaigns.");
+      }
+
+      setSyncAdAccounts(data.accounts || []);
+      if (data.accounts?.length > 0) {
+        setSelectedSyncAccount(data.accounts[0].name);
+      }
+
+      setFetchedCampaignSpends(data.campaignSpends || []);
+      
+      // Setup default mappings
+      const initialMappings: Record<string, string> = {};
+      const uniqueSourceProjects = Array.from(new Set((data.campaignSpends || []).map((e: any) => e.project))) as string[];
+      uniqueSourceProjects.forEach(sourceProj => {
+        const matched = customProjects.find(p => 
+          p.toLowerCase().includes(sourceProj.toLowerCase()) || 
+          sourceProj.toLowerCase().includes(p.toLowerCase())
+        );
+        initialMappings[sourceProj] = matched || customProjects[0] || "Grand Horizon Residence";
+      });
+      setProjectMappings(initialMappings);
+
+      if (data.mode === "sandbox") {
+        setSyncSuccess(`Demonstration Account Connected: Fetched ${data.campaignSpends?.length || 0} synthetic campaign spends.`);
+      } else {
+        setSyncSuccess(`Channel Sync Succeeded! Found ${data.campaignSpends?.length || 0} active daily records to import.`);
+      }
+    } catch (err: any) {
+      setSyncError(err.message || "Failed to download campaigns.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const importSyncedLogs = async () => {
+    if (fetchedCampaignSpends.length === 0) return;
+    setSyncing(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+    try {
+      const mappedEntries: DailySpendEntry[] = fetchedCampaignSpends.map(item => {
+        const mappedProj = projectMappings[item.project] || item.project;
+        return {
+          id: `entry_${item.date}_${mappedProj}_${item.medium}_${item.adAccount}`.replace(/[\s\(\):]/g, "_").toLowerCase(),
+          date: item.date,
+          project: mappedProj,
+          medium: item.medium,
+          adAccount: item.adAccount,
+          spend: item.spend,
+          leads: item.leads,
+          createdAt: new Date().toISOString()
+        };
+      });
+
+      await onSave(mappedEntries);
+      
+      // Auto-register
+      mappedEntries.forEach(entry => {
+        if (!customProjects.includes(entry.project)) {
+          setCustomProjects(prev => [...prev, entry.project]);
+        }
+        if (entry.adAccount && !customAdAccounts.includes(entry.adAccount)) {
+          setCustomAdAccounts(prev => [...prev, entry.adAccount]);
+        }
+      });
+
+      setSyncSuccess(`Success! Instantly imported ${mappedEntries.length} marketing log entries into your live report!`);
+      setFetchedCampaignSpends([]);
+    } catch (err: any) {
+      setSyncError(err.message || "Import operation failed.");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Local state for settings panel inputs
   const [newProjectInput, setNewProjectInput] = useState("");
@@ -775,6 +966,14 @@ export default function DailySpendTracker({
               }`}
             >
               📥 CSV Bulk Import
+            </button>
+            <button
+              onClick={() => setActiveSubTab("sync")}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                activeSubTab === "sync" ? "bg-white text-indigo-900 shadow-sm font-bold" : "bg-indigo-600/50 text-indigo-100 hover:bg-indigo-600"
+              }`}
+            >
+              🔗 Sync Meta & Google
             </button>
             <button
               onClick={() => setActiveSubTab("settings")}
@@ -1522,6 +1721,348 @@ export default function DailySpendTracker({
         </div>
       )}
 
+      {activeSubTab === "sync" && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl p-6 border border-slate-100 shadow-2xs space-y-6">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+              <div className="bg-indigo-50 text-indigo-600 p-2.5 rounded-lg border border-indigo-100">
+                <RefreshCw size={22} className={syncing ? "animate-spin" : ""} />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">Campaign API Synchronization Network</h3>
+                <p className="text-xs text-slate-500">Connect securely and pull spends directly from Meta Graph and Google Ads dashboards without standard spreadsheet exports.</p>
+              </div>
+            </div>
+
+            {syncError && (
+              <div className="p-4 bg-red-50 border border-red-100 text-red-800 text-xs rounded-xl flex items-start gap-2.5 shadow-3xs">
+                <ShieldAlert size={18} className="text-red-500 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="font-bold">Sync Mismatch:</span> {syncError}
+                </div>
+                <button onClick={() => setSyncError(null)} className="text-red-400 hover:text-red-650 cursor-pointer">
+                  <X size={15} />
+                </button>
+              </div>
+            )}
+
+            {syncSuccess && (
+              <div className="p-4 bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs rounded-xl flex items-start gap-2.5 shadow-3xs">
+                <CheckCircle size={18} className="text-emerald-500 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="font-bold">API Handshake:</span> {syncSuccess}
+                </div>
+                <button onClick={() => setSyncSuccess(null)} className="text-emerald-400 hover:text-emerald-650 cursor-pointer">
+                  <X size={15} />
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left Column: Platform settings & authorization status */}
+              <div className="lg:col-span-4 space-y-5">
+                <div className="bg-slate-50/55 border border-slate-200/60 p-4.5 rounded-xl space-y-4">
+                  <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-wider">1. Choose Platform</h4>
+                  
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-lg">
+                    <button
+                      onClick={() => {
+                        setSyncPlatform("meta");
+                        setFetchedCampaignSpends([]);
+                      }}
+                      className={`py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                        syncPlatform === "meta" ? "bg-white text-indigo-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Meta Ads
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSyncPlatform("google");
+                        setFetchedCampaignSpends([]);
+                      }}
+                      className={`py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                        syncPlatform === "google" ? "bg-white text-indigo-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Google Ads
+                    </button>
+                  </div>
+
+                  {/* Authorization panel */}
+                  <div className="bg-white rounded-lg p-3.5 border border-slate-100 shadow-3xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Secure Status</span>
+                      {(syncPlatform === "meta" ? syncMetaToken : syncGoogleToken) ? (
+                        <span className="px-2 py-0.5 text-[9px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md flex items-center gap-1 animate-pulse">
+                          <span className="w-1 h-1 rounded-full bg-emerald-500" /> Active
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 text-[9px] font-black uppercase bg-slate-100 text-slate-500 border border-slate-200 rounded-md">
+                          Inactive
+                        </span>
+                      )}
+                    </div>
+
+                    {(syncPlatform === "meta" ? syncMetaToken : syncGoogleToken) ? (
+                      <div className="space-y-2">
+                        <div className="p-2 bg-emerald-50/50 border border-emerald-100 rounded-lg flex items-center gap-2">
+                          <Check size={16} className="text-emerald-500" />
+                          <div className="text-[10px] text-slate-650 truncate w-full font-mono">
+                            {(syncPlatform === "meta" ? syncMetaToken : syncGoogleToken)?.substring(0, 24)}...
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (syncPlatform === "meta") {
+                              setSyncMetaToken(null);
+                            } else {
+                              setSyncGoogleToken(null);
+                            }
+                            setFetchedCampaignSpends([]);
+                          }}
+                          className="w-full text-center py-1.5 text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-md border border-red-100 transition-all cursor-pointer"
+                        >
+                          Revoke Active Session Token
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-[10.5px] text-slate-450 leading-relaxed">
+                          Authorize secure popup queries to connect your campaign metrics to the reporting ledger.
+                        </p>
+                        <button
+                          onClick={triggerPlatformOauth}
+                          className={`w-full py-2.5 text-xs font-bold text-white rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm ${
+                            syncPlatform === "meta" 
+                              ? "bg-blue-600 hover:bg-blue-700" 
+                              : "bg-indigo-600 hover:bg-indigo-700"
+                          }`}
+                        >
+                          <Link size={13} /> OAuth Connect {syncPlatform === "meta" ? "Meta Ads" : "Google Ads"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filter and Date Criteria Card */}
+                <div className="bg-slate-50/55 border border-slate-200/60 p-4.5 rounded-xl space-y-4">
+                  <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-wider">2. Configure Date Limits</h4>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Start Date</label>
+                      <input
+                        type="date"
+                        value={syncStartDate}
+                        onChange={(e) => setSyncStartDate(e.target.value)}
+                        className="w-full text-xs border border-slate-250/70 p-2 rounded-lg bg-white text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">End Date</label>
+                      <input
+                        type="date"
+                        value={syncEndDate}
+                        onChange={(e) => setSyncEndDate(e.target.value)}
+                        className="w-full text-xs border border-slate-250/70 p-2 rounded-lg bg-white text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-indigo-50/40 border border-indigo-100/50 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10.5px] font-bold text-indigo-900 block">Interactive Sandbox Mode</span>
+                      <input
+                        type="checkbox"
+                        checked={isDemoSync}
+                        onChange={(e) => setIsDemoSync(e.target.checked)}
+                        className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+                      />
+                    </div>
+                    <p className="text-[9.5px] text-slate-500 leading-normal">
+                      Active by default. Feeds working demo campaigns for evaluating performance filters without configuring GCP or Facebook App credentials first.
+                    </p>
+                  </div>
+
+                  <button
+                    disabled={syncing || !(syncPlatform === "meta" ? syncMetaToken : syncGoogleToken)}
+                    onClick={fetchSpendsFromPlatform}
+                    className="w-full py-3 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-250 text-white font-bold text-xs rounded-xl shadow-md disabled:shadow-none transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {syncing ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" /> Retriculating API Spends...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={13} /> Pull Active Spends Report
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Column: Mapping & Live preview */}
+              <div className="lg:col-span-8 flex flex-col justify-between border border-slate-100 rounded-xl bg-slate-50/20 p-4 min-h-[420px]">
+                {fetchedCampaignSpends.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center text-center py-20 px-6 my-auto space-y-4">
+                    <div className="mx-auto bg-slate-100 text-slate-400 p-4 rounded-full border border-slate-220">
+                      <Link size={26} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-800">Choose Ad Account & Sync</h4>
+                      <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed mt-1">
+                        Connect Meta Ads or Google Ads in Sandbox or Custom parameters mode. Clicking "Pull Spends" will list campaigns and let you map them securely.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-5 flex-1 flex flex-col justify-between">
+                    <div>
+                      {/* Dynamic mapping helper */}
+                      <div className="bg-amber-500/10 border border-amber-500/20 p-3.5 rounded-xl space-y-2.5 mb-4">
+                        <div className="flex items-center gap-1.5 text-amber-800 text-[11px] font-black uppercase">
+                          <AlertTriangle size={14} className="text-amber-500" />
+                          Coordinate Project Mappings
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-relaxed">
+                          Meta and Google campaigns return custom ad names. Select which of your designated projects each unique platform campaigns logs into:
+                        </p>
+
+                        <div className="divide-y divide-slate-150/65 max-h-48 overflow-y-auto bg-white p-2.5 rounded-lg border border-slate-100 space-y-2">
+                          {Object.keys(projectMappings).map(sourceProj => (
+                            <div key={sourceProj} className="pt-2 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <span className="text-[10.5px] font-semibold text-slate-700 truncate max-w-xs block select-all font-mono">
+                                🌐 {sourceProj}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] text-slate-400 block">maps to</span>
+                                <select
+                                  value={projectMappings[sourceProj] || ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setProjectMappings(prev => ({
+                                      ...prev,
+                                      [sourceProj]: val
+                                    }));
+                                  }}
+                                  className="text-[10.5px] font-semibold border border-slate-200 bg-slate-50/50 p-1 px-1.5 rounded focus:bg-white text-slate-800"
+                                >
+                                  {customProjects.map(p => (
+                                    <option key={p} value={p}>{p}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Fetched list preview */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10.5px] font-black uppercase text-slate-450 tracking-wider block">API Spends Log Response</span>
+                          <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-2 py-0.5 rounded-full">
+                            {fetchedCampaignSpends.length} individual dates
+                          </span>
+                        </div>
+                        
+                        <div className="overflow-x-auto border border-slate-150/60 rounded-lg max-h-56 bg-white shadow-3xs">
+                          <table className="w-full text-xs text-left text-slate-650 divide-y divide-slate-150">
+                            <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 divide-x divide-slate-150">
+                              <tr>
+                                <th className="px-3 py-2 bg-slate-100">Date</th>
+                                <th className="px-3 py-2 bg-slate-50">Campaign Group (Mapped)</th>
+                                <th className="px-3 py-2 bg-slate-100 text-right">Raw Spend</th>
+                                <th className="px-3 py-2 bg-slate-50 text-right">Leads</th>
+                                <th className="px-3 py-2 bg-slate-100 text-right">CPL</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-[11px] font-medium text-slate-650">
+                              {fetchedCampaignSpends.map((item, idx) => {
+                                const mappedProj = projectMappings[item.project] || item.project;
+                                const spendVal = item.spend || 0;
+                                const Cpl = item.leads > 0 ? (spendVal / item.leads).toFixed(1) : "0.0";
+                                return (
+                                  <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                                    <td className="px-3 py-1.5 font-mono text-slate-500 font-bold whitespace-nowrap bg-slate-50/40 select-all">{item.date}</td>
+                                    <td className="px-3 py-1.5 leading-tight font-semibold text-slate-800">
+                                      <div className="truncate max-w-[200px]" title={item.project}>{item.project}</div>
+                                      <div className="text-[9px] text-indigo-600 block">→ {mappedProj}</div>
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right font-bold text-slate-800">₹{spendVal.toLocaleString()}</td>
+                                    <td className="px-3 py-1.5 text-right font-bold text-emerald-600">{item.leads}</td>
+                                    <td className="px-3 py-1.5 text-right font-mono text-slate-400">₹{Cpl}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-150 mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-150 shadow-3xs">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Sync Summary</span>
+                        <p className="text-xs text-slate-700 font-semibold">
+                          Total sync commits: <span className="text-indigo-600 font-black">{fetchedCampaignSpends.length} records</span> • Total spend ₹{fetchedCampaignSpends.reduce((sum, e) => sum + e.spend, 0).toLocaleString()}  
+                        </p>
+                      </div>
+                      <button
+                        onClick={importSyncedLogs}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer leading-none"
+                      >
+                        <CheckCircle size={14} /> Commit Sync & Save Entries
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Credentials Info & Settings Manual */}
+          <div className="p-5 rounded-xl border border-slate-100 bg-slate-50/50 space-y-4">
+            <h4 className="text-xs font-black uppercase text-indigo-900 flex items-center gap-1.5 tracking-wider">
+              <Info size={15} className="text-indigo-600" />
+              Developer Credentials & Setup Instruction Handbook
+            </h4>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Standard secure oauth integrations utilize Facebook developers console and GCP credential consoles respectively. Ensure you add the dynamic live redirection parameters inside your developer portals before running production-ready API handshakes:
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3.5 bg-white rounded-lg border border-slate-150 shadow-4xs space-y-2">
+                <span className="px-1.5 py-0.5 text-[9px] bg-blue-50 text-blue-600 rounded font-black uppercase">Meta Developers</span>
+                <p className="text-[10.5px] text-slate-500 leading-normal">
+                  Go to <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">developers.facebook.com</a>, create a Business App, register your `ads_read` permission scope and define the redirect callback:
+                </p>
+                <div className="p-2 bg-slate-50 text-[10px] font-mono rounded border select-all scrollbar-thin text-slate-800 break-all leading-tight">
+                  {window.location.origin}/auth/meta-ads/callback
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-white rounded-lg border border-slate-150 shadow-4xs space-y-2">
+                <span className="px-1.5 py-0.5 text-[9px] bg-indigo-50 text-indigo-600 rounded font-black uppercase">GCP Cloud Console</span>
+                <p className="text-[10.5px] text-slate-500 leading-normal">
+                  Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">console.cloud.google.com</a>, generate safe OAuth Client Credentials, include Google Ads API and specify your OAuth Authorized redirect callback:
+                </p>
+                <div className="p-2 bg-slate-50 text-[10px] font-mono rounded border select-all scrollbar-thin text-slate-800 break-all leading-tight">
+                  {window.location.origin}/auth/google-ads/callback
+                </div>
+              </div>
+            </div>
+            
+            <p className="text-[10px] text-slate-450 leading-relaxed font-mono">
+              * Required Secrets configuration variables: `META_CLIENT_ID`, `META_CLIENT_SECRET`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`. Configure them dynamically in the AI Studio Settings secret panels.
+            </p>
+          </div>
+        </div>
+      )}
+
       {activeSubTab === "settings" && (
         <div className="bg-white rounded-xl p-6 border border-slate-100 shadow-xs space-y-6">
           <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
@@ -1702,6 +2243,32 @@ export default function DailySpendTracker({
           </div>
         </div>
       )}
+
+      {/* Compliance Footer */}
+      <footer className="mt-8 pt-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-[10.5px] text-slate-400">
+        <div>
+          &copy; 2026 Marketing Performance Copilot • Secure Cloud Integration
+        </div>
+        <div className="flex items-center gap-3">
+          <a 
+            href="/privacy-policy" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="text-indigo-600 hover:underline font-bold"
+          >
+            Privacy Policy
+          </a>
+          <span className="text-slate-300">•</span>
+          <a 
+            href="/data-deletion" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="text-indigo-600 hover:underline font-bold"
+          >
+            Data Deletion Policy
+          </a>
+        </div>
+      </footer>
     </div>
   );
 }

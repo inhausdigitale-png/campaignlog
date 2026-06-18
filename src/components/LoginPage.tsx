@@ -188,14 +188,35 @@ export default function LoginPage({
         )}
 
         {/* Footer info about portal restriction */}
-        <div className="mt-8 pt-4 border-t border-slate-100 flex justify-between text-[10px] text-slate-400 font-medium">
-          <div className="flex items-center gap-1">
-            <Compass size={11} />
-            <span>Strict Admin Control Active</span>
+        <div className="mt-8 pt-4 border-t border-slate-100 flex flex-col gap-2.5 text-[10px] text-slate-400 font-medium">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-1">
+              <Compass size={11} />
+              <span>Strict Admin Control Active</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <HelpCircle size={11} />
+              <span>Corporate Security Policy</span>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <HelpCircle size={11} />
-            <span>Corporate Security Policy</span>
+          <div className="flex justify-center items-center gap-3 border-t border-slate-50 pt-2.5 text-[9.5px]">
+            <a 
+              href="/privacy-policy" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-indigo-600 hover:underline font-bold"
+            >
+              Privacy Policy
+            </a>
+            <span className="text-slate-300">•</span>
+            <a 
+              href="/data-deletion" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-indigo-600 hover:underline font-bold"
+            >
+              Data Deletion Policy
+            </a>
           </div>
         </div>
       </div>
