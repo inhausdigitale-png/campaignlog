@@ -1176,6 +1176,7 @@ export default function App() {
                   onSavePerformance={handleSaveCampaignPerformance}
                   changeLogEntries={changeLogEntries}
                   dailySpendList={dailySpendList}
+                  onNavigate={setActiveTab}
                 />
               )}
               {activeTab === "campaigns" && (

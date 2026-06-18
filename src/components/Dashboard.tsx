@@ -57,6 +57,7 @@ interface DashboardProps {
   onSavePerformance?: (p: CampaignPerformance) => Promise<void>;
   changeLogEntries?: ChangeLogEntry[];
   dailySpendList?: DailySpendEntry[];
+  onNavigate?: (tab: "dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles" | "comparison" | "daily_spend") => void;
 }
 
 export default function Dashboard({ 
@@ -65,7 +66,8 @@ export default function Dashboard({
   portalReports = [],
   onSavePerformance,
   changeLogEntries = [],
-  dailySpendList = []
+  dailySpendList = [],
+  onNavigate
 }: DashboardProps) {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("All");
   const [selectedProject, setSelectedProject] = useState<string>("All");
@@ -299,6 +301,77 @@ export default function Dashboard({
     link.click();
     document.body.removeChild(link);
   };
+
+  // Calculation of last 7 days of total lead generation performance
+  const latestDateStr = React.useMemo(() => {
+    if (filteredDailySpends && filteredDailySpends.length > 0) {
+      const dates = filteredDailySpends.map(e => e.date).filter(Boolean);
+      if (dates.length > 0) {
+        return dates.reduce((max, d) => d > max ? d : max);
+      }
+    }
+    // Fallback to latest campaign date if available, otherwise fixed string
+    if (filteredCampaigns && filteredCampaigns.length > 0) {
+      const dates = filteredCampaigns.map(c => c.startDate).filter(Boolean);
+      if (dates.length > 0) {
+        return dates.reduce((max, d) => d > max ? d : max);
+      }
+    }
+    return "2026-06-18";
+  }, [filteredDailySpends, filteredCampaigns]);
+
+  const last7DaysData = React.useMemo(() => {
+    const dates: string[] = [];
+    try {
+      const baseDate = new Date(latestDateStr);
+      // Generate last 7 days ending at latestDateStr
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(baseDate);
+        d.setDate(baseDate.getDate() - i);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        dates.push(`${yyyy}-${mm}-${dd}`);
+      }
+    } catch (e) {
+      dates.push("2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18");
+    }
+
+    return dates.map(date => {
+      // Leads from daily spends
+      const dailySpendsForDate = filteredDailySpends.filter(e => e.date === date);
+      let totalDailyLeads = dailySpendsForDate.reduce((sum, e) => sum + (Number(e.leads) || 0), 0);
+
+      // If no daily spends, look for campaigns starting on this day or active during this day
+      let campaignLeadsOnDate = 0;
+      if (dailySpendsForDate.length === 0) {
+        const matchingCampaigns = filteredCampaigns.filter(c => c.startDate === date);
+        campaignLeadsOnDate = matchingCampaigns.reduce((sum, c) => sum + (Number(c.conversions) || Number(c.leads) || 0), 0);
+      }
+
+      const totalLeads = totalDailyLeads || campaignLeadsOnDate;
+
+      return {
+        date,
+        formattedDate: parseLocalDate(date),
+        shortDate: (() => {
+          try {
+            const parts = date.split("-");
+            return `${parts[2]}/${parts[1]}`;
+          } catch {
+            return date;
+          }
+        })(),
+        leads: totalLeads,
+        spend: dailySpendsForDate.reduce((sum, e) => sum + (Number(e.spend) || 0), 0)
+      };
+    });
+  }, [latestDateStr, filteredDailySpends, filteredCampaigns]);
+
+  // Aggregate sum of total leads over this 7-day interval
+  const total7DayLeadsSum = React.useMemo(() => {
+    return last7DaysData.reduce((sum, day) => sum + day.leads, 0);
+  }, [last7DaysData]);
 
   // Dynamic stats calculation
   const totalBudget = filteredCampaigns.reduce((sum, c) => sum + (Number(c.budget) || 0), 0);
@@ -541,90 +614,140 @@ export default function Dashboard({
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {/* Total Budget info */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 font-display">Target Budget</span>
-            <div className="p-1 text-slate-500 font-bold font-sans text-sm">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("targets")}
+          className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-indigo-400 hover:shadow-md active:scale-[0.98] transition-all text-left w-full group cursor-pointer duration-200"
+          title="Click to view full Target Budget Ledger"
+        >
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs font-semibold uppercase text-slate-400 font-display group-hover:text-indigo-600 transition-colors">Target Budget</span>
+            <div className="p-1 text-slate-500 group-hover:text-indigo-600 font-bold font-sans text-sm transition-colors">
               ₹
             </div>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900">
+          <div className="mt-4 w-full">
+            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900 group-hover:text-indigo-950 transition-colors">
               {formatINR(totalBudget)}
             </h3>
-            <p className="text-[10px] text-slate-500 mt-1">Sum of current plans</p>
+            <div className="flex items-center justify-between mt-1 h-3.5">
+              <span className="text-[10px] text-slate-500">Sum of current plans</span>
+              <span className="text-[9px] text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-all transform translate-x-1 group-hover:translate-x-0 flex items-center gap-0.5 whitespace-nowrap">
+                Ledger &rarr;
+              </span>
+            </div>
           </div>
-        </div>
+        </button>
 
         {/* Total Spend */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 font-display">Amount Spent</span>
-            <div className="p-1 px-1.5 bg-indigo-50 text-indigo-700 rounded text-xs font-bold font-sans">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("daily_spend")}
+          className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-indigo-400 hover:shadow-md active:scale-[0.98] transition-all text-left w-full group cursor-pointer duration-200"
+          title="Click to view detailed Day-wise Spend ledger"
+        >
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs font-semibold uppercase text-slate-400 font-display group-hover:text-indigo-600 transition-colors">Amount Spent</span>
+            <div className="p-1 px-1.5 bg-indigo-50 text-indigo-700 rounded text-xs font-bold font-sans group-hover:bg-indigo-100 transition-colors">
               ₹
             </div>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900">
+          <div className="mt-4 w-full">
+            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900 group-hover:text-indigo-950 transition-colors">
               {formatINR(totalSpend)}
             </h3>
-            <p className="text-[10px] text-indigo-700 font-medium mt-1">
-              {totalBudget > 0 ? `${((totalSpend / totalBudget) * 100).toFixed(0)}% budget burn rate` : "0% spent"}
-            </p>
+            <div className="flex items-center justify-between mt-1 h-3.5">
+              <span className="text-[10px] text-indigo-700 font-medium">
+                {totalBudget > 0 ? `${((totalSpend / totalBudget) * 100).toFixed(0)}% burn rate` : "0% spent"}
+              </span>
+              <span className="text-[9px] text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-all transform translate-x-1 group-hover:translate-x-0 flex items-center gap-0.5 whitespace-nowrap">
+                Spends &rarr;
+              </span>
+            </div>
           </div>
-        </div>
+        </button>
 
         {/* Conversions */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 font-display">Conversions</span>
-            <div className="p-1.5 bg-indigo-50 text-indigo-700 rounded-md">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("performance")}
+          className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-indigo-400 hover:shadow-md active:scale-[0.98] transition-all text-left w-full group cursor-pointer duration-200"
+          title="Click to view ROI Campaign Performance Tracker"
+        >
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs font-semibold uppercase text-slate-400 font-display group-hover:text-indigo-600 transition-colors">Conversions</span>
+            <div className="p-1.5 bg-indigo-50 text-indigo-700 rounded-md group-hover:bg-indigo-100 transition-colors">
               <Target size={16} />
             </div>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900">
+          <div className="mt-4 w-full">
+            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900 group-hover:text-indigo-950 transition-colors">
               {formatIndianNumber(totalConversions)}
             </h3>
-            <p className="text-[10px] text-slate-500 mt-1">
-              Avg. Conv Rate: <span className="font-semibold text-slate-700">{convRate.toFixed(2)}%</span>
-            </p>
+            <div className="flex items-center justify-between mt-1 h-3.5">
+              <span className="text-[10px] text-slate-500">
+                Rate: <span className="font-semibold text-slate-700">{convRate.toFixed(2)}%</span>
+              </span>
+              <span className="text-[9px] text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-all transform translate-x-1 group-hover:translate-x-0 flex items-center gap-0.5 whitespace-nowrap">
+                ROI &rarr;
+              </span>
+            </div>
           </div>
-        </div>
+        </button>
 
         {/* Average CPA */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 font-display">Avg CPA</span>
-            <div className="p-0.5 bg-slate-50 text-slate-600 rounded text-[11px] font-bold font-sans">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("performance")}
+          className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-indigo-400 hover:shadow-md active:scale-[0.98] transition-all text-left w-full group cursor-pointer duration-200"
+          title="Click to view detailed campaign ROI analysis"
+        >
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs font-semibold uppercase text-slate-400 font-display group-hover:text-indigo-600 transition-colors">Avg CPA</span>
+            <div className="p-0.5 px-1 bg-slate-50 text-slate-600 rounded text-[11px] font-bold font-sans group-hover:bg-indigo-55 group-hover:text-indigo-700 transition-colors">
               ₹/c
             </div>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900">
+          <div className="mt-4 w-full">
+            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900 group-hover:text-indigo-950 transition-colors">
               {formatINR(cpa)}
             </h3>
-            <p className="text-[10px] text-slate-500 mt-1">Cost per acquiring customer</p>
+            <div className="flex items-center justify-between mt-1 h-3.5">
+              <span className="text-[10px] text-slate-500">Cost/acquisition</span>
+              <span className="text-[9px] text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-all transform translate-x-1 group-hover:translate-x-0 flex items-center gap-0.5 whitespace-nowrap">
+                Analyze &rarr;
+              </span>
+            </div>
           </div>
-        </div>
+        </button>
 
         {/* CTR & Clicks */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm col-span-2 md:col-span-1 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-slate-400 font-display">Click CTR</span>
-            <div className="p-1.5 bg-indigo-50 text-indigo-700 rounded-md">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("campaigns")}
+          className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm col-span-2 md:col-span-1 flex flex-col justify-between hover:border-indigo-400 hover:shadow-md active:scale-[0.98] transition-all text-left w-full group cursor-pointer duration-200"
+          title="Click to view digital campaign details"
+        >
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs font-semibold uppercase text-slate-400 font-display group-hover:text-indigo-600 transition-colors">Click CTR</span>
+            <div className="p-1.5 bg-indigo-50 text-indigo-700 rounded-md group-hover:bg-indigo-100 transition-colors">
               <MousePointerClick size={16} />
             </div>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900">
+          <div className="mt-4 w-full">
+            <h3 className="text-lg md:text-xl font-bold font-mono text-slate-900 group-hover:text-indigo-950 transition-colors">
               {ctr.toFixed(2)}%
             </h3>
-            <p className="text-[10px] text-slate-500 mt-1">
-              From <span className="font-semibold">{formatIndianNumber(totalClicks)}</span> clicks
-            </p>
+            <div className="flex items-center justify-between mt-1 h-3.5">
+              <span className="text-[10px] text-slate-500">
+                From <span className="font-semibold">{formatIndianNumber(totalClicks)}</span> clicks
+              </span>
+              <span className="text-[9px] text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-all transform translate-x-1 group-hover:translate-x-0 flex items-center gap-0.5 whitespace-nowrap">
+                Campaigns &rarr;
+              </span>
+            </div>
           </div>
-        </div>
+        </button>
       </div>
 
       {mergedCampaigns.length === 0 ? (
@@ -1201,8 +1324,88 @@ export default function Dashboard({
                 </div>
               </div>
 
-              {/* Right Panel: Campaign Inspector & Budget Simulator (col-span-1) */}
-              {(() => {
+              {/* Right Panel: Campaign Inspector + 7-Day Lead Trend (col-span-1) */}
+              <div className="lg:col-span-1 flex flex-col gap-6">
+
+                {/* 7-Day Lead Trend Card */}
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="bg-emerald-50 text-emerald-600 p-1.5 rounded-lg border border-emerald-100 flex items-center justify-center">
+                        <TrendingUp size={15} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider font-display shrink-0">
+                          7-Day Lead Trend
+                        </h4>
+                        <p className="text-[10px] text-slate-400 font-medium font-sans">Last 7 reporting days</p>
+                      </div>
+                    </div>
+                    {/* Tiny badge indicating aggregation project scope */}
+                    <span className="text-[9px] bg-indigo-50 border border-indigo-150 text-indigo-700 px-2 py-0.5 rounded font-bold font-mono">
+                      {selectedProject === "All" ? "All Projects" : selectedProject}
+                    </span>
+                  </div>
+
+                  {/* Summary Metric Header */}
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50/60 p-3 rounded-xl border border-slate-150">
+                    <div>
+                      <span className="text-slate-400 block text-[9.5px] font-bold uppercase font-mono mb-0.5">Total Leads</span>
+                      <span className="font-mono font-black text-slate-900 text-base">{total7DayLeadsSum} <span className="text-[10px] text-slate-400 font-bold normal-case font-sans">leads</span></span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[9.5px] font-bold uppercase font-mono mb-0.5">Daily Velocity</span>
+                      <span className="font-mono font-black text-indigo-700 text-base">{(total7DayLeadsSum / 7).toFixed(1)} <span className="text-[10px] text-slate-400 font-medium normal-case font-sans">/ day</span></span>
+                    </div>
+                  </div>
+
+                  {/* Lightweight line chart */}
+                  <div className="h-32 w-full text-xs">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={last7DaysData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis 
+                          dataKey="shortDate" 
+                          stroke="#94a3b8" 
+                          fontSize={9.5} 
+                          tickLine={false} 
+                          axisLine={false}
+                          dy={5}
+                        />
+                        <YAxis 
+                          stroke="#94a3b8" 
+                          fontSize={9.5} 
+                          tickLine={false} 
+                          axisLine={false}
+                          allowDecimals={false}
+                        />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: "#0f172a", borderRadius: "8px", border: "none", color: "#fff", fontSize: "11px" }}
+                          formatter={(value) => [`${value} Leads`, "Volume"]}
+                          labelFormatter={(label, activePayload) => {
+                            if (activePayload && activePayload.length > 0) {
+                              const rawDate = activePayload[0].payload.date;
+                              return parseLocalDate(rawDate);
+                            }
+                            return label;
+                          }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="leads" 
+                          name="Total Leads" 
+                          stroke="#10b981" 
+                          strokeWidth={2.5}
+                          dot={{ r: 3, strokeWidth: 1.5, fill: "#fff" }}
+                          activeDot={{ r: 5 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Campaign Inspector & Budget Simulator */}
+                {(() => {
                 const activeInspectorCampaign = filteredCampaigns.find(c => c.id === selectedInspectorCampaignId) || filteredCampaigns[0] || null;
 
                 if (!activeInspectorCampaign) {
@@ -1387,6 +1590,7 @@ export default function Dashboard({
                   </div>
                 );
               })()}
+              </div>
             </div>
           </div>
 
