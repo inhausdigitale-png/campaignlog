@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Lead, Campaign } from "../types";
+import React, { useState, useEffect } from "react";
+import { Lead, Campaign, LeadActivityLog } from "../types";
 import {
   Plus,
   Mail,
@@ -17,8 +17,11 @@ import {
   Upload,
   FileSpreadsheet,
   AlertCircle,
-  Sparkles
+  Sparkles,
+  User,
+  History
 } from "lucide-react";
+import LeadActivityTimelineLogs from "./LeadActivityTimelineLogs";
 
 interface LeadPortalProps {
   leads: Lead[];
@@ -26,6 +29,49 @@ interface LeadPortalProps {
   onSaveLead: (lead: Lead) => Promise<void>;
   onDeleteLead: (id: string) => Promise<void>;
 }
+
+const INITIAL_LOGS: LeadActivityLog[] = [
+  {
+    id: "act-1",
+    timestamp: new Date(Date.now() - 3600000 * 24 * 3).toISOString(), // 3 days ago
+    action: "BULK_UPLOAD",
+    actor: "gouthamarun123@gmail.com",
+    entityId: "bulk-csv-99a",
+    entityName: "99 Acres Import",
+    details: "Synthesized and verified 14 digital leads from 99 Acres June CSV dashboard import.",
+    platform: "99 Acres"
+  },
+  {
+    id: "act-2",
+    timestamp: new Date(Date.now() - 3600000 * 24 * 2).toISOString(), // 2 days ago
+    action: "CREATE_LEAD",
+    actor: "gouthamarun123@gmail.com",
+    entityId: "lead-manual-1",
+    entityName: "Timothy Cooper",
+    details: "Registered prospect lead manually from on-call inquiry. Set stage to 'Contacted'.",
+    platform: "Direct Call"
+  },
+  {
+    id: "act-3",
+    timestamp: new Date(Date.now() - 3600000 * 18).toISOString(), // 18 hours ago
+    action: "UPDATE_STATUS",
+    actor: "gouthamarun123@gmail.com",
+    entityId: "lead-portal-3",
+    entityName: "Simran Kaur",
+    details: "Pipeline stage upgraded from 'New' to 'Negotiating' following callback confirmation.",
+    platform: "99 Acres"
+  },
+  {
+    id: "act-4",
+    timestamp: new Date(Date.now() - 3600000 * 4).toISOString(), // 4 hours ago
+    action: "UPDATE_STATUS",
+    actor: "gouthamarun123@gmail.com",
+    entityId: "lead-portal-4",
+    entityName: "Albert Pinto",
+    details: "Lead marked 'Closed Won' - booking token of ₹1,00,500 recorded for Regal Arch.",
+    platform: "Magicbricks"
+  }
+];
 
 export default function LeadPortal({
   leads,
@@ -37,10 +83,45 @@ export default function LeadPortal({
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [campaignFilter, setCampaignFilter] = useState<string>("All");
 
-  const [viewMode, setViewMode] = useState<"all" | "portal-only">("all");
+  const [viewMode, setViewMode] = useState<"all" | "portal-only" | "logs-history">("all");
   const [showUploadSection, setShowUploadSection] = useState(false);
   const [csvContent, setCsvContent] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
+
+  const [activityLogs, setActivityLogs] = useState<LeadActivityLog[]>(() => {
+    const saved = localStorage.getItem("g_pipeline_activity_logs");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return INITIAL_LOGS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("g_pipeline_activity_logs", JSON.stringify(activityLogs));
+  }, [activityLogs]);
+
+  const addLogEntry = (
+    action: LeadActivityLog["action"],
+    entityId: string,
+    entityName: string,
+    details: string,
+    platform?: string
+  ) => {
+    const newLog: LeadActivityLog = {
+      id: "act-" + Math.random().toString(36).substring(2, 9),
+      timestamp: new Date().toISOString(),
+      action,
+      actor: "gouthamarun123@gmail.com",
+      entityId,
+      entityName,
+      details,
+      platform,
+    };
+    setActivityLogs((prev) => [newLog, ...prev]);
+  };
 
   const handleFileImport = (file: File) => {
     if (!file.name.endsWith(".csv") && !file.type.includes("csv")) {
@@ -92,6 +173,13 @@ export default function LeadPortal({
     };
 
     await onSaveLead(newLead);
+    addLogEntry(
+      "CREATE_LEAD",
+      newLead.id,
+      newLead.leadName,
+      `Prospect lead created manually${newLead.campaignName ? ` linked to campaign '${newLead.campaignName}'` : ""}. Initial status set to '${newLead.status}'.`,
+      newLead.platform
+    );
     setShowModal(false);
 
     // Reset fields
@@ -113,6 +201,13 @@ export default function LeadPortal({
       status: newStatus,
     };
     await onSaveLead(updated);
+    addLogEntry(
+      "UPDATE_STATUS",
+      lead.id,
+      lead.leadName,
+      `Status stage updated from '${lead.status}' to '${newStatus}'.`,
+      lead.platform || lead.portalSource || "Direct Connect"
+    );
   };
 
   // CSV bulk template load / parse helper
@@ -161,6 +256,13 @@ export default function LeadPortal({
     }
 
     alert(`Successfully processed and uploaded ${count} portal leads!`);
+    addLogEntry(
+      "BULK_UPLOAD",
+      "bulk-csv-" + Math.random().toString(36).substring(2, 7),
+      `${count} Portal Leads`,
+      `Verified and imported a bundle of ${count} prospective digital leads into pipeline using CSV spreadsheet parser.`,
+      "CSV Bulk Upload"
+    );
     setCsvContent("");
     setShowUploadSection(false);
   };
@@ -363,27 +465,46 @@ export default function LeadPortal({
       )}
 
       {/* View Mode Switching Tab Segment */}
-      <div className="flex p-1 bg-slate-100 rounded-lg max-w-sm">
+      <div className="flex p-1 bg-slate-100 rounded-lg max-w-xl gap-1">
         <button
           onClick={() => setViewMode("all")}
-          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-            viewMode === "all" ? "bg-white text-slate-800 shadow-xs" : "text-slate-500 hover:text-slate-700"
+          className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            viewMode === "all" ? "bg-white text-slate-800 shadow-xs" : "text-slate-500 hover:text-slate-750"
           }`}
         >
-          All Leads Database
+          <span>All Leads Database</span>
+          <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 text-[10px] rounded font-mono font-bold">{leads.length}</span>
         </button>
         <button
           onClick={() => setViewMode("portal-only")}
-          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer relative ${
-            viewMode === "portal-only" ? "bg-white text-slate-800 shadow-xs" : "text-slate-500 hover:text-slate-700"
+          className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-md transition-all cursor-pointer relative flex items-center justify-center gap-1.5 ${
+            viewMode === "portal-only" ? "bg-white text-slate-800 shadow-xs" : "text-slate-500 hover:text-slate-750"
           }`}
         >
-          Uploaded Portal Leads Only
+          <span>Uploaded Portal Leads</span>
+          <span className="px-1.5 py-0.2 bg-indigo-50 text-indigo-700 text-[10px] rounded font-mono font-bold">
+            {leads.filter(l => l.isPortalLead).length}
+          </span>
           {leads.some((l) => l.isPortalLead) && (
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-600 rounded-full animate-ping" />
+            <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-600 rounded-full animate-ping" />
           )}
         </button>
+        <button
+          onClick={() => setViewMode("logs-history")}
+          className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-md transition-all cursor-pointer relative flex items-center justify-center gap-1.5 ${
+            viewMode === "logs-history" ? "bg-white text-slate-800 shadow-xs" : "text-slate-500 hover:text-slate-750"
+          }`}
+        >
+          <Clock size={13} className="text-indigo-600" />
+          <span>Activity Log &amp; History</span>
+          <span className="px-1.5 py-0.2 bg-violet-50 text-violet-700 text-[10px] rounded font-mono font-bold">{activityLogs.length}</span>
+        </button>
       </div>
+
+      {viewMode === "logs-history" ? (
+        <LeadActivityTimelineLogs activityLogs={activityLogs} setActivityLogs={setActivityLogs} />
+      ) : (
+        <>
 
       {/* Filter and Search Panels */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs">
@@ -546,6 +667,13 @@ export default function LeadPortal({
                         onClick={async () => {
                           if (confirm(`Do you wish to remove lead contact "${l.leadName}"?`)) {
                             await onDeleteLead(l.id);
+                            addLogEntry(
+                              "DELETE_LEAD",
+                              l.id,
+                              l.leadName,
+                              `Lead prospect '${l.leadName}' was deleted and removed from database completely.`,
+                              l.platform || "Portal"
+                            );
                           }
                         }}
                         className="p-1.5 border border-slate-150 text-slate-400 hover:text-rose-500 hover:border-rose-100 hover:bg-slate-100 rounded-lg shrink-0 cursor-pointer transition-all"
@@ -561,6 +689,8 @@ export default function LeadPortal({
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* Manual creation modal */}
       {showModal && (

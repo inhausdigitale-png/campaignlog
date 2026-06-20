@@ -292,5 +292,17 @@ export interface DailySpendEntry {
   adAccount?: string;
 }
 
+export interface LeadActivityLog {
+  id: string;
+  timestamp: string;
+  action: "CREATE_LEAD" | "UPDATE_STATUS" | "BULK_UPLOAD" | "DELETE_LEAD" | "PURGE_LOGS";
+  actor: string;
+  entityId: string;
+  entityName: string;
+  details: string;
+  platform?: string;
+}
+
+
 
 

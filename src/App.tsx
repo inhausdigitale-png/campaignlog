@@ -20,6 +20,7 @@ import UserRolesSettings from "./components/UserRolesSettings";
 import LoginPage from "./components/LoginPage";
 import TargetPerformanceComparison from "./components/TargetPerformanceComparison";
 import DailySpendTracker from "./components/DailySpendTracker";
+import GlobalActivityLogs from "./components/GlobalActivityLogs";
 import {
   Sparkles,
   LayoutDashboard,
@@ -51,7 +52,7 @@ import {
 
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles" | "comparison" | "daily_spend">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles" | "comparison" | "daily_spend" | "activity_logs">("dashboard");
   const [campaignsMenuOpen, setCampaignsMenuOpen] = useState(true);
 
   // Custom/Simulated Roles & Permissions state
@@ -993,6 +994,33 @@ export default function App() {
                 <span>Portal Leads</span>
               </button>
 
+              {/* Leads Pipeline btn */}
+              <button
+                onClick={() => setActiveTab("leads")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
+                  activeTab === "leads"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <Workflow size={16} className="text-slate-500" />
+                <span>Leads Pipeline</span>
+              </button>
+
+              {/* Central master Audit Logs btn */}
+              <button
+                id="sidebar_global_audit_logs_btn"
+                onClick={() => setActiveTab("activity_logs")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
+                  activeTab === "activity_logs"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <History size={16} className="text-indigo-650 text-indigo-600" />
+                <span>Audit Logs &amp; History</span>
+              </button>
+
               {/* Target performance comparison btn */}
               <button
                 onClick={() => setActiveTab("comparison")}
@@ -1235,6 +1263,24 @@ export default function App() {
                     onClearAllReports={handleClearAllPortalReports}
                     rolePermission={currentRolePermission}
                     leads={leads}
+                  />
+                </div>
+              )}
+              {activeTab === "leads" && (
+                <div className="space-y-6 animate-fade-in" id="leads-portal-container">
+                  <LeadPortal
+                    leads={leads}
+                    campaigns={mergedCampaigns}
+                    onSaveLead={handleSaveLead}
+                    onDeleteLead={handleDeleteLead}
+                  />
+                </div>
+              )}
+              {activeTab === "activity_logs" && (
+                <div className="space-y-6 animate-fade-in" id="global-activity-logs-container">
+                  <GlobalActivityLogs
+                    auditLogs={auditLogs}
+                    changeLogs={changeLogEntries}
                   />
                 </div>
               )}
