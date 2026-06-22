@@ -6,7 +6,6 @@ import { signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 import { ROLE_PERMISSIONS } from "./utils/indiaHelpers";
 import Dashboard from "./components/Dashboard";
 import CampaignList from "./components/CampaignList";
-import LeadPortal from "./components/LeadPortal";
 import CreativeHub from "./components/CreativeHub";
 import PortalReportModule from "./components/PortalReportModule";
 import TargetBudgetLedger from "./components/TargetBudgetLedger";
@@ -21,6 +20,7 @@ import LoginPage from "./components/LoginPage";
 import TargetPerformanceComparison from "./components/TargetPerformanceComparison";
 import DailySpendTracker from "./components/DailySpendTracker";
 import GlobalActivityLogs from "./components/GlobalActivityLogs";
+import AutoHealAgent from "./components/AutoHealAgent";
 import {
   Sparkles,
   LayoutDashboard,
@@ -41,6 +41,7 @@ import {
   Globe,
   Sliders,
   Shield,
+  ShieldCheck,
   TrendingUp,
   FileSpreadsheet,
   ArrowUpDown,
@@ -52,7 +53,7 @@ import {
 
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "leads" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles" | "comparison" | "daily_spend" | "activity_logs">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles" | "comparison" | "daily_spend" | "activity_logs" | "auto_heal_agent">("dashboard");
   const [campaignsMenuOpen, setCampaignsMenuOpen] = useState(true);
 
   // Custom/Simulated Roles & Permissions state
@@ -994,19 +995,6 @@ export default function App() {
                 <span>Portal Leads</span>
               </button>
 
-              {/* Leads Pipeline btn */}
-              <button
-                onClick={() => setActiveTab("leads")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "leads"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <Workflow size={16} className="text-slate-500" />
-                <span>Leads Pipeline</span>
-              </button>
-
               {/* Central master Audit Logs btn */}
               <button
                 id="sidebar_global_audit_logs_btn"
@@ -1124,6 +1112,23 @@ export default function App() {
               >
                 <Shield size={16} />
                 <span>User Roles Settings</span>
+              </button>
+
+              {/* Auto-Heal Agent Core btn */}
+              <button
+                onClick={() => setActiveTab("auto_heal_agent")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left relative ${
+                  activeTab === "auto_heal_agent"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <span className="relative flex h-2 w-2 mr-0.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <ShieldCheck size={16} className="text-emerald-600" />
+                <span>Auto-Heal Core</span>
               </button>
             </nav>
           </div>
@@ -1266,16 +1271,6 @@ export default function App() {
                   />
                 </div>
               )}
-              {activeTab === "leads" && (
-                <div className="space-y-6 animate-fade-in" id="leads-portal-container">
-                  <LeadPortal
-                    leads={leads}
-                    campaigns={mergedCampaigns}
-                    onSaveLead={handleSaveLead}
-                    onDeleteLead={handleDeleteLead}
-                  />
-                </div>
-              )}
               {activeTab === "activity_logs" && (
                 <div className="space-y-6 animate-fade-in" id="global-activity-logs-container">
                   <GlobalActivityLogs
@@ -1355,6 +1350,11 @@ export default function App() {
                   adAccounts={Array.from(new Set(campaignPerformances.map(c => c.adAccountId).filter(Boolean))) as string[]}
                   rolePermission={currentRolePermission}
                 />
+              )}
+              {activeTab === "auto_heal_agent" && (
+                <div className="space-y-6 animate-fade-in" id="global-auto-healing-agent-container">
+                  <AutoHealAgent />
+                </div>
               )}
             </div>
           )}
