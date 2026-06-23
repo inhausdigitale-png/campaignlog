@@ -45,6 +45,10 @@ export default function TargetBudgetLedger({
   const [totalLeadTarget, setTotalLeadTarget] = useState(300);
   const [digitalLeadTarget, setDigitalLeadTarget] = useState(250);
   const [btlLeadTarget, setBtlLeadTarget] = useState(50);
+  const [targetSvc, setTargetSvc] = useState(60);
+  const [targetAllocation, setTargetAllocation] = useState(80);
+  const [targetBooking, setTargetBooking] = useState(8);
+  const [targetSpendAmount, setTargetSpendAmount] = useState(10000);
 
   // Editing week values
   const [editWeekIdx, setEditWeekIdx] = useState<"week1" | "week2" | "week3" | "week4" | "week5" | null>(null);
@@ -87,6 +91,10 @@ export default function TargetBudgetLedger({
       const idxTotalGoal = headers.findIndex(h => h === "totalleadsgoal" || h === "totalleadgoal" || h === "leadtarget" || h === "totalleadtarget");
       const idxDigitalGoal = headers.findIndex(h => h === "digitaltarget" || h === "digitalleadtarget");
       const idxBtlGoal = headers.findIndex(h => h === "btltarget" || h === "btlleadtarget");
+      const idxTargetSvc = headers.findIndex(h => h === "targetsvc" || h === "svcgoal" || h === "svctarget" || h === "sitevisittarget");
+      const idxTargetAllocation = headers.findIndex(h => h === "targetallocation" || h === "allocationtarget" || h === "leadallocationtarget");
+      const idxTargetBooking = headers.findIndex(h => h === "targetbooking" || h === "bookingtarget" || h === "bookingsgoal");
+      const idxTargetSpendAmount = headers.findIndex(h => h === "targetspendamount" || h === "targetspend" || h === "spendtarget" || h === "spendamounttarget");
 
       const emptyMetric = (): WeeklyMetric => ({
         spend: 0,
@@ -113,6 +121,10 @@ export default function TargetBudgetLedger({
         const rowTotalGoal = idxTotalGoal !== -1 && cells[idxTotalGoal] ? (parseInt(cells[idxTotalGoal]) || 0) : 0;
         const rowDigitalGoal = idxDigitalGoal !== -1 && cells[idxDigitalGoal] ? (parseInt(cells[idxDigitalGoal]) || 0) : 0;
         const rowBtlGoal = idxBtlGoal !== -1 && cells[idxBtlGoal] ? (parseInt(cells[idxBtlGoal]) || 0) : 0;
+        const rowTargetSvc = idxTargetSvc !== -1 && cells[idxTargetSvc] ? (parseInt(cells[idxTargetSvc]) || 0) : 60;
+        const rowTargetAllocation = idxTargetAllocation !== -1 && cells[idxTargetAllocation] ? (parseInt(cells[idxTargetAllocation]) || 0) : 80;
+        const rowTargetBooking = idxTargetBooking !== -1 && cells[idxTargetBooking] ? (parseInt(cells[idxTargetBooking]) || 0) : 8;
+        const rowTargetSpendAmount = idxTargetSpendAmount !== -1 && cells[idxTargetSpendAmount] ? (parseInt(cells[idxTargetSpendAmount]) || 0) : rowBudget;
 
         const newTarget: TargetBudgetRow = {
           id: "rep-tg-" + Math.random().toString(36).substring(2, 9),
@@ -136,6 +148,10 @@ export default function TargetBudgetLedger({
           week4: emptyMetric(),
           week5: emptyMetric(),
           createdAt: new Date().toISOString(),
+          targetSvc: rowTargetSvc,
+          targetAllocation: rowTargetAllocation,
+          targetBooking: rowTargetBooking,
+          targetSpendAmount: rowTargetSpendAmount,
         };
 
         await onSaveTarget(newTarget);
@@ -189,6 +205,10 @@ export default function TargetBudgetLedger({
       week4: emptyMetric(),
       week5: emptyMetric(),
       createdAt: new Date().toISOString(),
+      targetSvc: Number(targetSvc),
+      targetAllocation: Number(targetAllocation),
+      targetBooking: Number(targetBooking),
+      targetSpendAmount: Number(targetSpendAmount) || Number(budget),
     };
 
     await onSaveTarget(newTarget);
@@ -296,6 +316,14 @@ export default function TargetBudgetLedger({
   const totalLeadsAchieved = filteredTargets.reduce((sum, t) => sum + t.totalLeadAchieved, 0);
   const totalBookings = filteredTargets.reduce((sum, t) => sum + t.booking, 0);
 
+  // New Custom Targets dynamic aggregations
+  const totalTargetBookingGoal = filteredTargets.reduce((sum, t) => sum + (t.targetBooking ?? 8), 0);
+  const totalTargetSvcGoal = filteredTargets.reduce((sum, t) => sum + (t.targetSvc ?? 60), 0);
+  const actualSvcConducted = filteredTargets.reduce((sum, t) => sum + (t.siteVisit || 0), 0);
+  const totalTargetAllocationGoal = filteredTargets.reduce((sum, t) => sum + (t.targetAllocation ?? 80), 0);
+  const actualLeadAllocation = filteredTargets.reduce((sum, t) => sum + (t.leadAllocation || 0), 0);
+  const totalTargetSpendAmountGoal = filteredTargets.reduce((sum, t) => sum + (t.targetSpendAmount || t.budget), 0);
+
   return (
     <div className="space-y-6" id="target-budget-ledger-panel">
       {/* Dynamic Summary counters banner */}
@@ -303,11 +331,11 @@ export default function TargetBudgetLedger({
         {/* Card 1 */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between" id="ledger-stat-budget">
           <div>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Target Budget</span>
-            <span className="text-xl font-bold text-slate-800 font-mono">{formatINR(totalBudget)}</span>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Target Spend Goal</span>
+            <span className="text-xl font-bold text-slate-800 font-mono">{formatINR(totalTargetSpendAmountGoal)}</span>
           </div>
           <span className="text-[10px] text-indigo-650 font-bold mt-2 flex items-center gap-1">
-            <Coins size={11} /> Allocation Limit (INR)
+            <Coins size={11} /> Budget Goal limit: {formatINR(totalBudget)}
           </span>
         </div>
 
@@ -317,40 +345,42 @@ export default function TargetBudgetLedger({
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Actual Spend</span>
             <span className="text-xl font-bold text-slate-800 font-mono">{formatINR(totalSpend)}</span>
           </div>
-          <span className={`text-[10px] font-bold mt-2 flex items-center gap-1 ${totalSpend > totalBudget ? "text-rose-600" : "text-slate-500"}`}>
-            <Coins size={11} /> {totalBudget > 0 ? ((totalSpend / totalBudget) * 100).toFixed(0) + "% Utilized" : "0% Utilized"}
+          <span className={`text-[10px] font-bold mt-2 flex items-center gap-1 ${totalSpend > totalTargetSpendAmountGoal ? "text-rose-600" : "text-slate-500"}`}>
+            <Coins size={11} /> {totalTargetSpendAmountGoal > 0 ? ((totalSpend / totalTargetSpendAmountGoal) * 100).toFixed(0) + "% limit util" : "0% limit util"}
           </span>
         </div>
 
         {/* Card 3 */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between" id="ledger-stat-avg-leads">
           <div>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1 font-display">Target Leads</span>
-            <span className="text-xl font-bold text-slate-800 tracking-tight">{totalLeadsTargeted}</span>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1 font-display">Target / Alloc Goals</span>
+            <span className="text-xl font-bold text-slate-800 tracking-tight">{totalLeadsTargeted} / {totalTargetAllocationGoal}</span>
           </div>
-          <span className="text-[10px] text-slate-400 font-semibold mt-2">Team Cumulative Goal</span>
+          <span className="text-[10px] text-slate-400 font-semibold mt-2">
+            Alloc: {actualLeadAllocation} done
+          </span>
         </div>
 
         {/* Card 4 */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between" id="ledger-stat-leads-achieved">
           <div>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Leads Achieved</span>
-            <span className={`text-xl font-bold tracking-tight ${totalLeadsAchieved >= totalLeadsTargeted ? "text-emerald-700" : "text-amber-700"}`}>
-              {totalLeadsAchieved}
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Visits (SVC) / Goals</span>
+            <span className={`text-xl font-bold tracking-tight ${actualSvcConducted >= totalTargetSvcGoal ? "text-emerald-700" : "text-amber-700"}`}>
+              {actualSvcConducted} / {totalTargetSvcGoal}
             </span>
           </div>
           <span className="text-[10px] text-teal-600 font-bold mt-2 flex items-center gap-1">
-            <TrendingUp size={11} /> {totalLeadsTargeted > 0 ? ((totalLeadsAchieved / totalLeadsTargeted) * 100).toFixed(0) + "% Realized" : "0% Realized"}
+            <TrendingUp size={11} /> {totalTargetSvcGoal > 0 ? ((actualSvcConducted / totalTargetSvcGoal) * 100).toFixed(0) + "% SVC achieved" : "0% SVC achieved"}
           </span>
         </div>
 
         {/* Card 5 */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:col-span-1 col-span-2 justify-between" id="ledger-stat-bookings">
           <div>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1 font-display">Bookings</span>
-            <span className="text-xl font-bold text-slate-800 font-mono">{totalBookings} units</span>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1 font-display">Bookings actual / goals</span>
+            <span className="text-xl font-bold text-slate-800 font-mono">{totalBookings} / {totalTargetBookingGoal}</span>
           </div>
-          <span className="text-[10px] text-slate-400 mt-2 font-semibold">CPL dynamic index: ₹{totalLeadsAchieved > 0 ? (totalSpend / totalLeadsAchieved).toFixed(1) : "0.0"}</span>
+          <span className="text-[10px] text-slate-400 mt-2 font-semibold">CPL actual list index: ₹{totalLeadsAchieved > 0 ? (totalSpend / totalLeadsAchieved).toFixed(1) : "0.0"}</span>
         </div>
       </div>
 
@@ -592,7 +622,11 @@ export default function TargetBudgetLedger({
                     type="number"
                     min="0"
                     value={budget}
-                    onChange={(e) => setBudget(parseInt(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 0;
+                      setBudget(val);
+                      setTargetSpendAmount(val);
+                    }}
                     className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 outline-hidden"
                   />
                 </div>
@@ -624,6 +658,54 @@ export default function TargetBudgetLedger({
                     value={btlLeadTarget}
                     onChange={(e) => setBtlLeadTarget(parseInt(e.target.value) || 0)}
                     className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 outline-hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Explicit TARGET SVC, TARGET ALLOCATION, TARGET BOOKINGS, TARGET SPEND AMOUNT row */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-semibold text-slate-600 border-t border-slate-100 pt-3 mt-1">
+                <div>
+                  <label className="block text-slate-500 mb-1">Target SVC (Site Visits)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={targetSvc}
+                    onChange={(e) => setTargetSvc(parseInt(e.target.value) || 0)}
+                    className="w-full p-2 bg-slate-50 border-slate-200 rounded-lg text-slate-800 outline-hidden bg-indigo-50/20"
+                    placeholder="e.g. 60"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-500 mb-1">Target Allocation</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={targetAllocation}
+                    onChange={(e) => setTargetAllocation(parseInt(e.target.value) || 0)}
+                    className="w-full p-2 bg-slate-50 border-slate-200 rounded-lg text-slate-800 outline-hidden bg-indigo-50/20"
+                    placeholder="e.g. 80"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-500 mb-1">Target Bookings</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={targetBooking}
+                    onChange={(e) => setTargetBooking(parseInt(e.target.value) || 0)}
+                    className="w-full p-2 bg-slate-50 border-slate-200 rounded-lg text-slate-800 outline-hidden bg-indigo-50/20"
+                    placeholder="e.g. 8"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-500 mb-1">Target Spend Amount (INR)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={targetSpendAmount}
+                    onChange={(e) => setTargetSpendAmount(parseInt(e.target.value) || 0)}
+                    className="w-full p-2 bg-slate-50 border-slate-200 rounded-lg text-slate-800 outline-hidden bg-indigo-50/20"
+                    placeholder="e.g. 10000"
                   />
                 </div>
               </div>
@@ -668,7 +750,7 @@ export default function TargetBudgetLedger({
                   return (
                     <div
                       key={t.id}
-                      className={`bg-white border p-4.5 rounded-xl shadow-xs transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-slate-350 cursor-pointer ${
+                      className={`bg-white border p-4.5 rounded-xl shadow-xs transition-all flex flex-col gap-3 hover:border-slate-350 cursor-pointer ${
                         isSelected ? "ring-2 ring-indigo-600 border-indigo-200" : "border-slate-200"
                       }`}
                       onClick={() => {
@@ -677,68 +759,98 @@ export default function TargetBudgetLedger({
                       }}
                       id={`target-row-card-${t.id}`}
                     >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="p-1 text-[10px] font-bold bg-slate-100 text-slate-655 border border-slate-205 rounded font-mono">
-                            {t.month}
-                          </span>
-                          <span className="text-xs font-bold text-slate-800">{t.project}</span>
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="p-1 text-[10px] font-bold bg-slate-100 text-slate-655 border border-slate-205 rounded font-mono">
+                              {t.month}
+                            </span>
+                            <span className="text-xs font-bold text-slate-800">{t.project}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                            <ArrowLeftRight size={10} className="text-slate-400" /> {t.medium}
+                          </p>
                         </div>
-                        <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
-                          <ArrowLeftRight size={10} className="text-slate-400" /> {t.medium}
-                        </p>
+
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 w-full md:w-auto">
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                              <span>Budget Spent ({spendPct}%)</span>
+                              <span className="font-mono text-slate-705">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
+                            </div>
+                            <div className="w-40 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${spendPct > 100 ? "bg-rose-500" : "bg-indigo-600"}`}
+                                style={{ width: `${Math.min(spendPct, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                              <span>Target Leads ({leadPctDisplay}%)</span>
+                              <span className="font-mono text-slate-750">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
+                            </div>
+                            <div className="w-40 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${leadPctDisplay >= 100 ? "bg-emerald-500" : "bg-amber-500"}`}
+                                style={{ width: `${Math.min(leadPctDisplay, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="hidden md:flex flex-col items-center justify-center pr-2">
+                            {rolePermission.canDeleteTargets ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteTarget(t.id);
+                                  if (selectedTarget?.id === t.id) {
+                                    setSelectedTarget(null);
+                                  }
+                                }}
+                                className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
+                                title="Erase targeted ledger row"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            ) : (
+                              <button
+                                disabled
+                                className="p-1 text-slate-200 cursor-not-allowed"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-6 w-full md:w-auto">
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                            <span>Budget Spent ({spendPct}%)</span>
-                            <span className="font-mono text-slate-705">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
-                          </div>
-                          <div className="w-40 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${spendPct > 100 ? "bg-rose-500" : "bg-indigo-600"}`}
-                              style={{ width: `${Math.min(spendPct, 100)}%` }}
-                            />
-                          </div>
+                      {/* Site Visits, Allocation, Booking, Spend Goals display block */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-150 text-[11px] mt-1">
+                        <div>
+                          <span className="text-slate-400 block font-bold text-[9px] uppercase tracking-wider">Site Visits (SVC)</span>
+                          <span className="font-bold text-slate-800">
+                            {t.siteVisit} <span className="font-medium text-slate-400">/ Goal: {t.targetSvc ?? 60}</span>
+                          </span>
                         </div>
-
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                            <span>Target Leads ({leadPctDisplay}%)</span>
-                            <span className="font-mono text-slate-750">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
-                          </div>
-                          <div className="w-40 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${leadPctDisplay >= 100 ? "bg-emerald-500" : "bg-amber-500"}`}
-                              style={{ width: `${Math.min(leadPctDisplay, 100)}%` }}
-                            />
-                          </div>
+                        <div>
+                          <span className="text-slate-400 block font-bold text-[9px] uppercase tracking-wider">Lead Allocation</span>
+                          <span className="font-bold text-slate-800">
+                            {t.leadAllocation} <span className="font-medium text-slate-400">/ Goal: {t.targetAllocation ?? 80}</span>
+                          </span>
                         </div>
-
-                        <div className="hidden md:flex flex-col items-center justify-center pr-2">
-                          {rolePermission.canDeleteTargets ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDeleteTarget(t.id);
-                                if (selectedTarget?.id === t.id) {
-                                  setSelectedTarget(null);
-                                }
-                              }}
-                              className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
-                              title="Erase targeted ledger row"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          ) : (
-                            <button
-                              disabled
-                              className="p-1 text-slate-200 cursor-not-allowed"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          )}
+                        <div>
+                          <span className="text-slate-400 block font-bold text-[9px] uppercase tracking-wider">Bookings Goal</span>
+                          <span className="font-bold text-slate-800">
+                            {t.booking} <span className="font-medium text-slate-400">/ Goal: {t.targetBooking ?? 8}</span>
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-bold text-[9px] uppercase tracking-wider">Target Spend Amount</span>
+                          <span className="font-bold text-slate-800">
+                            {formatINR(t.spend)} <span className="font-medium text-slate-400">/ Goal: {formatINR(t.targetSpendAmount || t.budget)}</span>
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -789,7 +901,7 @@ export default function TargetBudgetLedger({
                           return (
                             <div
                               key={t.id}
-                              className={`bg-white border p-3 rounded-lg shadow-2xs transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-3 hover:border-slate-350 cursor-pointer ${
+                              className={`bg-white border p-3 rounded-lg shadow-2xs transition-all flex flex-col gap-2 hover:border-slate-350 cursor-pointer ${
                                 isSelected ? "ring-2 ring-indigo-600 border-indigo-205 bg-indigo-50/10" : "border-slate-150"
                               }`}
                               onClick={() => {
@@ -797,53 +909,74 @@ export default function TargetBudgetLedger({
                                 setEditWeekIdx(null);
                               }}
                             >
-                              <div className="space-y-0.5">
-                                <div className="flex items-center gap-2">
-                                  <span className="p-0.5 px-1 text-[9px] font-bold bg-slate-100 text-slate-655 border border-slate-205 rounded font-mono">
-                                    {t.month}
-                                  </span>
-                                  <span className="text-xs font-bold text-slate-805">{t.medium}</span>
+                              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 w-full">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="p-0.5 px-1 text-[9px] font-bold bg-slate-100 text-slate-655 border border-slate-205 rounded font-mono">
+                                      {t.month}
+                                    </span>
+                                    <span className="text-xs font-bold text-slate-805">{t.medium}</span>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full md:w-auto text-[11px]">
+                                  <div className="space-y-0.5">
+                                    <div className="flex justify-between text-[9px] font-semibold text-slate-400">
+                                      <span>Spend ({tSpendPct}%)</span>
+                                    </div>
+                                    <span className="font-mono text-slate-700 block">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
+                                  </div>
+
+                                  <div className="space-y-0.5">
+                                    <div className="flex justify-between text-[9px] font-semibold text-slate-400">
+                                      <span>Leads ({tLeadPct}%)</span>
+                                    </div>
+                                    <span className="font-mono text-slate-705 block">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
+                                  </div>
+
+                                  <div className="hidden md:flex flex-col items-center justify-center pr-1">
+                                    {rolePermission.canDeleteTargets ? (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onDeleteTarget(t.id);
+                                          if (selectedTarget?.id === t.id) {
+                                            setSelectedTarget(null);
+                                          }
+                                        }}
+                                        className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
+                                        title="Erase targeted ledger row"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        disabled
+                                        className="p-1 text-slate-200 cursor-not-allowed"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full md:w-auto text-[11px]">
-                                <div className="space-y-0.5">
-                                  <div className="flex justify-between text-[9px] font-semibold text-slate-400">
-                                    <span>Spend ({tSpendPct}%)</span>
-                                  </div>
-                                  <span className="font-mono text-slate-700 block">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50 p-2 rounded border border-slate-100 text-[10px] w-full">
+                                <div>
+                                  <span className="text-slate-400 block font-bold text-[8px] uppercase tracking-wider">Site Visits (SVC)</span>
+                                  <span className="font-bold text-slate-750">{t.siteVisit} <span className="font-medium text-slate-400">/ Goal: {t.targetSvc ?? 60}</span></span>
                                 </div>
-
-                                <div className="space-y-0.5">
-                                  <div className="flex justify-between text-[9px] font-semibold text-slate-400">
-                                    <span>Leads ({tLeadPct}%)</span>
-                                  </div>
-                                  <span className="font-mono text-slate-705 block">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
+                                <div>
+                                  <span className="text-slate-400 block font-bold text-[8px] uppercase tracking-wider">Allocation Target</span>
+                                  <span className="font-bold text-slate-755">{t.leadAllocation} <span className="font-medium text-slate-400">/ Goal: {t.targetAllocation ?? 80}</span></span>
                                 </div>
-
-                                <div className="hidden md:flex flex-col items-center justify-center pr-1">
-                                  {rolePermission.canDeleteTargets ? (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onDeleteTarget(t.id);
-                                        if (selectedTarget?.id === t.id) {
-                                          setSelectedTarget(null);
-                                        }
-                                      }}
-                                      className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
-                                      title="Erase targeted ledger row"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      disabled
-                                      className="p-1 text-slate-200 cursor-not-allowed"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
-                                  )}
+                                <div>
+                                  <span className="text-slate-400 block font-bold text-[8px] uppercase tracking-wider">Bookings Goal</span>
+                                  <span className="font-bold text-slate-750">{t.booking} <span className="font-medium text-slate-400">/ Goal: {t.targetBooking ?? 8}</span></span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block font-bold text-[8px] uppercase tracking-wider">Target Spend Amount</span>
+                                  <span className="font-bold text-indigo-700">{formatINR(t.spend)} <span className="font-medium text-slate-400">/ Goal: {formatINR(t.targetSpendAmount || t.budget)}</span></span>
                                 </div>
                               </div>
                             </div>
@@ -898,7 +1031,7 @@ export default function TargetBudgetLedger({
                           return (
                             <div
                               key={t.id}
-                              className={`bg-white border p-3 rounded-lg shadow-2xs transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-3 hover:border-slate-350 cursor-pointer ${
+                              className={`bg-white border p-3 rounded-lg shadow-2xs transition-all flex flex-col gap-2 hover:border-slate-350 cursor-pointer ${
                                 isSelected ? "ring-2 ring-indigo-600 border-indigo-205 bg-indigo-50/10" : "border-slate-150"
                               }`}
                               onClick={() => {
@@ -906,53 +1039,74 @@ export default function TargetBudgetLedger({
                                 setEditWeekIdx(null);
                               }}
                             >
-                              <div className="space-y-0.5">
-                                <div className="flex items-center gap-2">
-                                  <span className="p-0.5 px-1 text-[9px] font-bold bg-slate-100 text-slate-655 border border-slate-205 rounded font-mono">
-                                    {t.month}
-                                  </span>
-                                  <span className="text-xs font-bold text-slate-850">{t.project}</span>
+                              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 w-full">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="p-0.5 px-1 text-[9px] font-bold bg-slate-100 text-slate-655 border border-slate-205 rounded font-mono">
+                                      {t.month}
+                                    </span>
+                                    <span className="text-xs font-bold text-slate-850">{t.project}</span>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full md:w-auto text-[11px]">
+                                  <div className="space-y-0.5">
+                                    <div className="flex justify-between text-[9px] font-semibold text-slate-400">
+                                      <span>Spend ({tSpendPct}%)</span>
+                                    </div>
+                                    <span className="font-mono text-slate-700 block">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
+                                  </div>
+
+                                  <div className="space-y-0.5">
+                                    <div className="flex justify-between text-[9px] font-semibold text-slate-400">
+                                      <span>Leads ({tLeadPct}%)</span>
+                                    </div>
+                                    <span className="font-mono text-slate-705 block">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
+                                  </div>
+
+                                  <div className="hidden md:flex flex-col items-center justify-center pr-1">
+                                    {rolePermission.canDeleteTargets ? (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onDeleteTarget(t.id);
+                                          if (selectedTarget?.id === t.id) {
+                                            setSelectedTarget(null);
+                                          }
+                                        }}
+                                        className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
+                                        title="Erase targeted ledger row"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        disabled
+                                        className="p-1 text-slate-200 cursor-not-allowed"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full md:w-auto text-[11px]">
-                                <div className="space-y-0.5">
-                                  <div className="flex justify-between text-[9px] font-semibold text-slate-400">
-                                    <span>Spend ({tSpendPct}%)</span>
-                                  </div>
-                                  <span className="font-mono text-slate-700 block">{formatINR(t.spend)} / {formatINR(t.budget)}</span>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50 p-2 rounded border border-slate-100 text-[10px] w-full">
+                                <div>
+                                  <span className="text-slate-400 block font-bold text-[8px] uppercase tracking-wider">Site Visits (SVC)</span>
+                                  <span className="font-bold text-slate-750">{t.siteVisit} <span className="font-medium text-slate-400">/ Goal: {t.targetSvc ?? 60}</span></span>
                                 </div>
-
-                                <div className="space-y-0.5">
-                                  <div className="flex justify-between text-[9px] font-semibold text-slate-400">
-                                    <span>Leads ({tLeadPct}%)</span>
-                                  </div>
-                                  <span className="font-mono text-slate-705 block">{t.totalLeadAchieved} / {t.totalLeadTarget}</span>
+                                <div>
+                                  <span className="text-slate-400 block font-bold text-[8px] uppercase tracking-wider">Allocation Target</span>
+                                  <span className="font-bold text-slate-755">{t.leadAllocation} <span className="font-medium text-slate-400">/ Goal: {t.targetAllocation ?? 80}</span></span>
                                 </div>
-
-                                <div className="hidden md:flex flex-col items-center justify-center pr-1">
-                                  {rolePermission.canDeleteTargets ? (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onDeleteTarget(t.id);
-                                        if (selectedTarget?.id === t.id) {
-                                          setSelectedTarget(null);
-                                        }
-                                      }}
-                                      className="p-1 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer text-slate-400"
-                                      title="Erase targeted ledger row"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      disabled
-                                      className="p-1 text-slate-200 cursor-not-allowed"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
-                                  )}
+                                <div>
+                                  <span className="text-slate-400 block font-bold text-[8px] uppercase tracking-wider">Bookings Goal</span>
+                                  <span className="font-bold text-slate-750">{t.booking} <span className="font-medium text-slate-400">/ Goal: {t.targetBooking ?? 8}</span></span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block font-bold text-[8px] uppercase tracking-wider">Target Spend Amount</span>
+                                  <span className="font-bold text-indigo-700">{formatINR(t.spend)} <span className="font-medium text-slate-405">/ Goal: {formatINR(t.targetSpendAmount || t.budget)}</span></span>
                                 </div>
                               </div>
                             </div>
@@ -989,6 +1143,26 @@ export default function TargetBudgetLedger({
                     <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-150 px-2 py-0.5 rounded">
                       Active Map
                     </span>
+                  </div>
+
+                  {/* Targets Summary Bar */}
+                  <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-slate-200 text-[10px] text-slate-600">
+                    <div className="bg-white p-1.5 rounded border border-slate-150">
+                      <span className="text-[8px] text-slate-400 font-bold uppercase block">Target SVC (Site Visits)</span>
+                      <span className="font-bold text-slate-800 font-mono">{selectedTarget.targetSvc ?? 60} SV</span>
+                    </div>
+                    <div className="bg-white p-1.5 rounded border border-slate-150">
+                      <span className="text-[8px] text-slate-400 font-bold uppercase block">Target Allocation</span>
+                      <span className="font-bold text-slate-800 font-mono">{selectedTarget.targetAllocation ?? 80} leads</span>
+                    </div>
+                    <div className="bg-white p-1.5 rounded border border-slate-150">
+                      <span className="text-[8px] text-slate-400 font-bold uppercase block">Target Bookings</span>
+                      <span className="font-bold text-indigo-700 font-mono">{selectedTarget.targetBooking ?? 8} units</span>
+                    </div>
+                    <div className="bg-white p-1.5 rounded border border-slate-150">
+                      <span className="text-[8px] text-slate-400 font-bold uppercase block">Target Spend Amt</span>
+                      <span className="font-bold text-slate-800 font-mono">{formatINR(selectedTarget.targetSpendAmount || selectedTarget.budget)}</span>
+                    </div>
                   </div>
                 </div>
 

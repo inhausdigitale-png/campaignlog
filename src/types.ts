@@ -207,6 +207,10 @@ export interface TargetBudgetRow {
   week4: WeeklyMetric;
   week5: WeeklyMetric;
   createdAt: string;
+  targetSvc?: number;
+  targetAllocation?: number;
+  targetBooking?: number;
+  targetSpendAmount?: number;
 }
 
 export interface RuleConfiguration {

@@ -9,7 +9,6 @@ import CampaignList from "./components/CampaignList";
 import CreativeHub from "./components/CreativeHub";
 import PortalReportModule from "./components/PortalReportModule";
 import TargetBudgetLedger from "./components/TargetBudgetLedger";
-import RuleConfigPanel from "./components/RuleConfigPanel";
 import CampaignPerformanceTracker from "./components/CampaignPerformanceTracker";
 import DownloadReportsHub from "./components/DownloadReportsHub";
 import OnboardingGuide from "./components/OnboardingGuide";
@@ -53,7 +52,7 @@ import {
 
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "portals" | "targets" | "rules" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles" | "comparison" | "daily_spend" | "activity_logs" | "auto_heal_agent">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "portals" | "targets" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles" | "comparison" | "daily_spend" | "activity_logs" | "auto_heal_agent">("dashboard");
   const [campaignsMenuOpen, setCampaignsMenuOpen] = useState(true);
 
   // Custom/Simulated Roles & Permissions state
@@ -1087,19 +1086,6 @@ export default function App() {
                 <span>AI</span>
               </button>
 
-              {/* Rule Configuration btn */}
-              <button
-                onClick={() => setActiveTab("rules")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "rules"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <Sliders size={16} />
-                <span>Rule Configuration</span>
-              </button>
-
               {/* User Roles Configuration btn */}
               <button
                 id="sidebar_roles_btn"
@@ -1293,16 +1279,7 @@ export default function App() {
                   performances={campaignPerformances}
                 />
               )}
-              {activeTab === "rules" && (
-                <RuleConfigPanel
-                  ruleSetting={ruleSetting}
-                  ruleSettingsList={ruleSettingsList}
-                  campaigns={mergedCampaigns}
-                  onSaveRule={handleSaveRuleConfiguration}
-                  onDeleteRule={handleDeleteRuleConfiguration}
-                  rolePermission={currentRolePermission}
-                />
-              )}
+
               {activeTab === "performance" && (
                 <CampaignPerformanceTracker
                   performances={campaignPerformances}
