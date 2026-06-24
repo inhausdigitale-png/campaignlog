@@ -8,6 +8,8 @@ interface TargetBudgetLedgerProps {
   onSaveTarget: (row: TargetBudgetRow) => Promise<void>;
   onDeleteTarget: (id: string) => Promise<void>;
   rolePermission?: UserRolePermission;
+  campaigns?: any[];
+  performances?: any[];
 }
 
 export default function TargetBudgetLedger({
@@ -30,12 +32,41 @@ export default function TargetBudgetLedger({
     canDeleteTargets: true,
     canManageRules: true
   },
+  campaigns = [],
+  performances = []
 }: TargetBudgetLedgerProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [showProjectConfig, setShowProjectConfig] = useState(false);
   const [importCsvText, setImportCsvText] = useState("");
   const [importFeedback, setImportFeedback] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<TargetBudgetRow | null>(null);
+
+  // Synchronized dynamic custom projects loaded from central localStorage
+  const [customProjects, setCustomProjects] = useState<string[]>(() => {
+    const saved = localStorage.getItem("marketing_copilot_custom_projects");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return ["Vivaana", "Grand Horizon Residence", "Oakridge Estate", "Skyline Residency"];
+  });
+
+  const [newProjectName, setNewProjectName] = useState("");
+
+  // Synchronized custom mediums loaded from localStorage
+  const [customMediums, setCustomMediums] = useState<string[]>(() => {
+    const saved = localStorage.getItem("marketing_copilot_custom_mediums");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return ["Digital - Meta Ads", "Google Ads", "LinkedIn Ads", "TikTok Ads", "BTL Activations", "OOH Billboards"];
+  });
 
   // Form states for creating a new row
   const [month, setMonth] = useState("2026-06");
@@ -59,6 +90,26 @@ export default function TargetBudgetLedger({
   const [weekAllocation, setWeekAllocation] = useState(0);
   const [weekSiteVisit, setWeekSiteVisit] = useState(0);
   const [weekBooking, setWeekBooking] = useState(0);
+
+  const handleAddProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newProjectName.trim();
+    if (!trimmed) return;
+    if (customProjects.includes(trimmed)) {
+      alert("This project already exists in the list.");
+      return;
+    }
+    const updated = [...customProjects, trimmed];
+    setCustomProjects(updated);
+    localStorage.setItem("marketing_copilot_custom_projects", JSON.stringify(updated));
+    setNewProjectName("");
+  };
+
+  const handleRemoveProject = (projToRemove: string) => {
+    const updated = customProjects.filter(p => p !== projToRemove);
+    setCustomProjects(updated);
+    localStorage.setItem("marketing_copilot_custom_projects", JSON.stringify(updated));
+  };
 
   const loadImportTemplate = () => {
     const template = `Month,Project Name,Channel,Planned Budget ($),Total Leads Goal,Digital Target,BTL Target
@@ -107,6 +158,9 @@ export default function TargetBudgetLedger({
       });
 
       let importCount = 0;
+      const importedProjs: string[] = [];
+      const importedMeds: string[] = [];
+
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
@@ -154,8 +208,31 @@ export default function TargetBudgetLedger({
           targetSpendAmount: rowTargetSpendAmount,
         };
 
+        if (rowProj && !importedProjs.includes(rowProj)) {
+          importedProjs.push(rowProj);
+        }
+        if (rowMedium && !importedMeds.includes(rowMedium)) {
+          importedMeds.push(rowMedium);
+        }
+
         await onSaveTarget(newTarget);
         importCount++;
+      }
+
+      // Auto-register any new imported projects and mediums into localStorage
+      if (importedProjs.length > 0) {
+        setCustomProjects(prev => {
+          const merged = Array.from(new Set([...prev, ...importedProjs]));
+          localStorage.setItem("marketing_copilot_custom_projects", JSON.stringify(merged));
+          return merged;
+        });
+      }
+      if (importedMeds.length > 0) {
+        setCustomMediums(prev => {
+          const merged = Array.from(new Set([...prev, ...importedMeds]));
+          localStorage.setItem("marketing_copilot_custom_mediums", JSON.stringify(merged));
+          return merged;
+        });
       }
 
       setImportFeedback(`Successfully imported ${importCount} target budget rows and configured Ledger plans!`);
@@ -212,6 +289,22 @@ export default function TargetBudgetLedger({
     };
 
     await onSaveTarget(newTarget);
+
+    // Auto-register typed custom project & channel if not already saved in localStorage
+    const trimmedProj = project.trim();
+    if (trimmedProj && !customProjects.includes(trimmedProj)) {
+      const updated = [...customProjects, trimmedProj];
+      setCustomProjects(updated);
+      localStorage.setItem("marketing_copilot_custom_projects", JSON.stringify(updated));
+    }
+
+    const trimmedMed = medium.trim();
+    if (trimmedMed && !customMediums.includes(trimmedMed)) {
+      const updatedM = [...customMediums, trimmedMed];
+      setCustomMediums(updatedM);
+      localStorage.setItem("marketing_copilot_custom_mediums", JSON.stringify(updatedM));
+    }
+
     setShowAddForm(false);
   };
 
@@ -264,14 +357,52 @@ export default function TargetBudgetLedger({
   // Grouping state: "all" (Default List), "project" (Project-wise Grouping), "medium" (Medium-wise Grouping)
   const [viewGrouping, setViewGrouping] = useState<"all" | "project" | "medium">("all");
 
-  // Get list of unique options for select fields
+  // Get list of unique options for select fields, merging targets, custom projects, campaigns, and performances
   const uniqueProjectsList = useMemo(() => {
-    return Array.from(new Set(targets.map(t => t.project).filter(Boolean))).sort();
-  }, [targets]);
+    const set = new Set<string>();
+    
+    // 1. Existing target projects
+    targets.forEach(t => {
+      if (t.project) set.add(t.project);
+    });
+
+    // 2. Custom projects defined in localStorage
+    customProjects.forEach(cp => {
+      if (cp) set.add(cp);
+    });
+
+    // 3. Campaign projects passed down
+    campaigns?.forEach(c => {
+      if (c.objectives && typeof c.objectives === "string" && c.objectives.includes("Project: ")) {
+        const match = c.objectives.match(/Project:\s*([^|]+)/);
+        if (match) set.add(match[1].trim());
+      } else if (c.project) {
+        set.add(c.project);
+      }
+    });
+
+    // 4. Performance projects passed down
+    performances?.forEach(p => {
+      if (p.projectName) set.add(p.projectName);
+    });
+
+    // 5. Defaults
+    ["Vivaana", "Grand Horizon Residence", "Oakridge Estate", "Skyline Residency"].forEach(p => set.add(p));
+
+    return Array.from(set).sort();
+  }, [targets, customProjects, campaigns, performances]);
 
   const uniqueMediumsList = useMemo(() => {
-    return Array.from(new Set(targets.map(t => t.medium).filter(Boolean))).sort();
-  }, [targets]);
+    const set = new Set<string>();
+    targets.forEach(t => {
+      if (t.medium) set.add(t.medium);
+    });
+    customMediums.forEach(cm => {
+      if (cm) set.add(cm);
+    });
+    ["Digital - Meta Ads", "Google Ads", "LinkedIn Ads", "TikTok Ads", "BTL Activations", "OOH Billboards"].forEach(m => set.add(m));
+    return Array.from(set).sort();
+  }, [targets, customMediums]);
 
   const uniqueMonthsList = useMemo(() => {
     return Array.from(new Set(targets.map(t => t.month).filter(Boolean))).sort().reverse();
@@ -392,12 +523,30 @@ export default function TargetBudgetLedger({
             <div className="flex gap-2">
               <button
                 onClick={() => {
+                  setShowProjectConfig(!showProjectConfig);
+                  setShowBulkImport(false);
+                  setShowAddForm(false);
+                  setSelectedTarget(null);
+                }}
+                className={`px-3 py-1.5 border font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all ${
+                  showProjectConfig
+                    ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                    : "border-slate-200 hover:bg-slate-50 text-slate-700 cursor-pointer"
+                }`}
+                id="btn-manage-projects"
+              >
+                <Layers size={12} />
+                <span>Manage Projects</span>
+              </button>
+              <button
+                onClick={() => {
                   if (!rolePermission.canManageTargets) {
                     alert("Permission Denied: Your simulated security role restricts adding or importing goals.");
                     return;
                   }
                   setShowBulkImport(!showBulkImport);
                   setShowAddForm(false);
+                  setShowProjectConfig(false);
                   setSelectedTarget(null);
                 }}
                 className={`px-3 py-1.5 border font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all ${
@@ -418,6 +567,7 @@ export default function TargetBudgetLedger({
                   }
                   setShowAddForm(!showAddForm);
                   setShowBulkImport(false);
+                  setShowProjectConfig(false);
                   setSelectedTarget(null);
                 }}
                 className={`px-3 py-1.5 font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all font-display ${
@@ -433,6 +583,59 @@ export default function TargetBudgetLedger({
               </button>
             </div>
           </div>
+
+          {showProjectConfig && (
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 animate-fade-in text-xs col-span-full" id="project-list-manager-panel">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="text-indigo-600" size={14} />
+                  <span className="font-extrabold text-xs uppercase tracking-wider text-slate-700 font-display">Dynamic Central Projects list</span>
+                </div>
+                <span className="text-[10px] bg-indigo-50 text-indigo-700 font-extrabold px-2 py-0.5 rounded-full">
+                  {uniqueProjectsList.length} total active
+                </span>
+              </div>
+
+              <p className="text-slate-500 text-[11px] leading-relaxed">
+                Add new real estate project tags dynamically. New projects are shared globally and become instantly selectable for newly established blueprints, marketing budgets, and daily performance logs.
+              </p>
+
+              {/* Form to add */}
+              <form onSubmit={handleAddProject} className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. Whispering Groves Luxury Homes"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  className="flex-1 text-xs border border-slate-250 rounded-lg p-2 bg-slate-50 text-slate-800 focus:bg-white focus:outline-indigo-500 outline-hidden"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-xs"
+                >
+                  <Plus size={14} /> Add Project
+                </button>
+              </form>
+
+              {/* Scrollable list of custom projects */}
+              <div className="max-h-52 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 rounded-lg border border-slate-200">
+                {customProjects.map((proj) => (
+                  <div key={proj} className="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50 transition-all font-medium text-slate-700">
+                    <span className="font-mono text-[11px] text-slate-600 font-bold">{proj}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveProject(proj)}
+                      className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 transition-all cursor-pointer"
+                      title={`Remove project '${proj}'`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Grouping Selectors & Filters */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">

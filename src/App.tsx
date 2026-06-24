@@ -1271,6 +1271,8 @@ export default function App() {
                   onSaveTarget={handleSaveTargetBudget}
                   onDeleteTarget={handleDeleteTargetBudget}
                   rolePermission={currentRolePermission}
+                  campaigns={mergedCampaigns}
+                  performances={campaignPerformances}
                 />
               )}
               {activeTab === "comparison" && (
