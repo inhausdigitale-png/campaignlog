@@ -1,41 +1,39 @@
-# Use Node.js Alpine as base image for a light-weight container
+# ---------- Build Stage ----------
 FROM node:20-alpine AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Copy package descriptors
+# Copy package files
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies needed for build)
+# Install all dependencies (including dev dependencies)
 RUN npm ci
 
-# Copy all source files
+# Copy project files
 COPY . .
 
-# Run production build (Vite client build & Esbuild server build)
+# Build frontend and backend
 RUN npm run build
 
-# Stage 2: Runner stage to keep the final image clean and small
+# ---------- Runtime Stage ----------
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
-# Bind to port 8080
 ENV PORT=8080
 
-# Copy package descriptors
+# Copy package files
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
-# Copy build artifacts (both compiled server and static client assets) from builder
+# Copy compiled application
 COPY --from=builder /app/dist ./dist
 
-# Expose port (Cloud Run will route traffic here)
+# Expose Cloud Run port
 EXPOSE 8080
 
-# Start the full-stack production server
-CMD ["npm", "start"]
+# Start the Express server
+CMD ["node", "dist/server.cjs"]
