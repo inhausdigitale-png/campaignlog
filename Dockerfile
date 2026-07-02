@@ -22,8 +22,8 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-# Bind to port 3000
-ENV PORT=3000
+# Bind to port 8080
+ENV PORT=8080
 
 # Copy package descriptors
 COPY package*.json ./
@@ -35,7 +35,7 @@ RUN npm ci --only=production
 COPY --from=builder /app/dist ./dist
 
 # Expose port (Cloud Run will route traffic here)
-EXPOSE 3000
+EXPOSE 8080
 
 # Start the full-stack production server
 CMD ["npm", "start"]
