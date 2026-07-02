@@ -926,17 +926,17 @@ export default function GoogleSheetsSync({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="p-1 px-2 border border-slate-100 text-[10px] font-bold uppercase text-indigo-700 bg-indigo-50/50 rounded-md">
-              Spreadsheet Hub
+              Data Imports Hub
             </span>
             <span className="text-slate-300">/</span>
             <span className="text-xs text-slate-500 font-medium font-sans">Multi-Sheet Workbook Integrator</span>
           </div>
           <h2 className="text-lg font-bold font-display text-slate-900 tracking-tight flex items-center gap-2">
             <FileSpreadsheet className="text-indigo-600" size={20} />
-            Spreadsheet Sync &amp; Upload Center
+            Data Imports &amp; Spreadsheet Sync
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Browse and sync marketing data. Upload general Excel/CSV documents directly from your computer or authorize real-time Google Sheets database sync.
+            Browse and import marketing data. Upload general Excel/CSV documents directly from your computer or authorize real-time Google Sheets database sync.
           </p>
         </div>
         

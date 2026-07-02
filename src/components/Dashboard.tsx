@@ -385,6 +385,13 @@ export default function Dashboard({
   const cpa = totalConversions > 0 ? totalSpend / totalConversions : 0;
   const convRate = totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0;
 
+  // Active / Inactive and Static / Video Counts
+  const totalAdsCount = filteredCampaigns.length;
+  const activeAdsCount = filteredCampaigns.filter(c => c.status === "active").length;
+  const inactiveAdsCount = totalAdsCount - activeAdsCount;
+  const staticCreativesCount = filteredCampaigns.filter(c => c.creativeType !== "video").length;
+  const videoCreativesCount = filteredCampaigns.filter(c => c.creativeType === "video").length;
+
   // Recharts: Data grouped dynamically based on current output criteria
   const platformGroupDataMap = filteredCampaigns.reduce((acc, c) => {
     if (!acc[c.platform]) {
@@ -398,6 +405,64 @@ export default function Dashboard({
   }, {} as Record<string, { platform: string; spend: number; conversions: number; clicks: number; budget: number }>);
 
   const platformChartData = Object.values(platformGroupDataMap);
+
+  // Campaigns filtered by platform and date filters, but NOT the project filter itself,
+  // to allow comparative project-wise analysis on the Dashboard
+  const projectFilteredCampaigns = React.useMemo(() => {
+    return mergedCampaigns.filter((c) => {
+      const matchesPlatform = selectedPlatform === "All" || c.platform === selectedPlatform;
+      const matchesStartDate = !startDateFilter || !c.startDate || c.startDate >= startDateFilter;
+      const matchesEndDate = !endDateFilter || !c.endDate || c.endDate <= endDateFilter;
+      return matchesPlatform && matchesStartDate && matchesEndDate;
+    });
+  }, [mergedCampaigns, selectedPlatform, startDateFilter, endDateFilter]);
+
+  // Group metrics by real estate project
+  const projectSummaryStats = React.useMemo(() => {
+    const summary: Record<string, {
+      projectName: string;
+      totalSpend: number;
+      totalLeads: number;
+      totalClicks: number;
+      totalImpressions: number;
+      campaignCount: number;
+    }> = {};
+
+    projectFilteredCampaigns.forEach((c) => {
+      const projName = getProjectName(c);
+      if (!summary[projName]) {
+        summary[projName] = {
+          projectName: projName,
+          totalSpend: 0,
+          totalLeads: 0,
+          totalClicks: 0,
+          totalImpressions: 0,
+          campaignCount: 0,
+        };
+      }
+      summary[projName].totalSpend += Number(c.spend) || 0;
+      summary[projName].totalLeads += Number(c.conversions) || 0;
+      summary[projName].totalClicks += Number(c.clicks) || 0;
+      summary[projName].totalImpressions += Number(c.impressions) || 0;
+      summary[projName].campaignCount += 1;
+    });
+
+    return Object.values(summary).map((item) => {
+      const conversionRate = item.totalClicks > 0 ? (item.totalLeads / item.totalClicks) * 100 : 0;
+      const cpa = item.totalLeads > 0 ? item.totalSpend / item.totalLeads : 0;
+      const ctr = item.totalImpressions > 0 ? (item.totalClicks / item.totalImpressions) * 100 : 0;
+      return {
+        ...item,
+        conversionRate,
+        cpa,
+        ctr,
+      };
+    }).sort((a, b) => b.totalSpend - a.totalSpend); // Sort by spend descending
+  }, [projectFilteredCampaigns]);
+
+  const totalProjectsSpend = React.useMemo(() => {
+    return projectSummaryStats.reduce((sum, p) => sum + p.totalSpend, 0);
+  }, [projectSummaryStats]);
 
   // Pie colors
   const COLORS = ["#4f46e5", "#6366f1", "#818cf8", "#94a3b8", "#cbd5e1"];
@@ -438,7 +503,7 @@ export default function Dashboard({
               : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
           }`}
         >
-          Digital Marketing
+          Performance Marketing
         </button>
         <button
           onClick={() => setDashboardView("portal")}
@@ -750,6 +815,70 @@ export default function Dashboard({
         </button>
       </div>
 
+      {/* Ad Delivery & Format Breakdowns */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4" id="delivery-format-kpis">
+        {/* Active Ads */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex items-center justify-between group duration-200">
+          <div>
+            <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Active Ad Campaigns</span>
+            <h4 className="text-xl font-black text-slate-900 mt-1">{activeAdsCount}</h4>
+            <span className="text-[9px] font-semibold flex items-center gap-1 mt-1 text-emerald-600">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              In Delivery
+            </span>
+          </div>
+          <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-100 transition-colors">
+            <CheckCircle2 size={16} />
+          </div>
+        </div>
+
+        {/* Inactive Ads */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex items-center justify-between group duration-200">
+          <div>
+            <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Inactive Ad Campaigns</span>
+            <h4 className="text-xl font-black text-slate-900 mt-1">{inactiveAdsCount}</h4>
+            <span className="text-[9px] text-slate-500 font-medium flex items-center gap-1 mt-1">
+              <Clock size={10} />
+              Paused / Drafts
+            </span>
+          </div>
+          <div className="p-2 bg-slate-100 text-slate-500 rounded-lg group-hover:bg-slate-200 transition-colors">
+            <Clock size={16} />
+          </div>
+        </div>
+
+        {/* Static Formats */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex items-center justify-between group duration-200">
+          <div>
+            <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Static Formats</span>
+            <h4 className="text-xl font-black text-slate-900 mt-1">{staticCreativesCount}</h4>
+            <span className="text-[9px] text-indigo-650 font-semibold flex items-center gap-1 mt-1 text-indigo-650">
+              Image Banners
+            </span>
+          </div>
+          <div className="p-1 px-2.5 bg-indigo-50 text-indigo-600 rounded-lg font-bold text-xs font-mono group-hover:bg-indigo-100 transition-colors">
+            IMG
+          </div>
+        </div>
+
+        {/* Video Formats */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex items-center justify-between group duration-200">
+          <div>
+            <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Video Formats</span>
+            <h4 className="text-xl font-black text-slate-900 mt-1">{videoCreativesCount}</h4>
+            <span className="text-[9px] text-cyan-650 font-semibold flex items-center gap-1 mt-1 text-cyan-600">
+              Reels &amp; Short Clips
+            </span>
+          </div>
+          <div className="p-1 px-2.5 bg-cyan-50 text-cyan-600 rounded-lg font-bold text-xs font-mono group-hover:bg-cyan-100 transition-colors">
+            MP4
+          </div>
+        </div>
+      </div>
+
       {mergedCampaigns.length === 0 ? (
         <div className="p-12 text-center bg-white rounded-xl border border-slate-200 shadow-xs">
           <LayoutDashboard className="mx-auto text-slate-300 mb-3" size={40} />
@@ -760,6 +889,103 @@ export default function Dashboard({
         </div>
       ) : (
         <>
+          {/* Project Performance Overview Section */}
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 space-y-4" id="project-overview-panel">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 font-display flex items-center gap-1.5 uppercase tracking-wider">
+                  <LayoutDashboard size={14} className="text-indigo-650 text-indigo-600" />
+                  <span>Project Performance Overview</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Consolidated campaign activities, budget consumption, and lead generation efficiency metrics by real estate project.
+                </p>
+              </div>
+              <div className="text-[10px] font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg">
+                Active Projects: <strong className="font-mono text-indigo-700">{projectSummaryStats.length}</strong>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full text-left border-collapse" id="project-overview-table">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase font-bold tracking-wider select-none">
+                    <th className="py-3 px-4">Project Name</th>
+                    <th className="py-3 px-4 text-center">Campaigns</th>
+                    <th className="py-3 px-4 text-right">Total Spend</th>
+                    <th className="py-3 px-4 text-right">Total Leads</th>
+                    <th className="py-3 px-4 text-right">Conv. Rate</th>
+                    <th className="py-3 px-4 text-right">Avg. CPA</th>
+                    <th className="py-3 px-4 text-right">CTR</th>
+                    <th className="py-3 px-4 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                  {projectSummaryStats.map((proj) => {
+                    const spendShare = totalProjectsSpend > 0 ? (proj.totalSpend / totalProjectsSpend) * 100 : 0;
+                    const isSelected = selectedProject === proj.projectName;
+                    return (
+                      <tr 
+                        key={proj.projectName}
+                        onClick={() => setSelectedProject(isSelected ? "All" : proj.projectName)}
+                        className={`hover:bg-slate-50/80 transition-all cursor-pointer group ${
+                          isSelected ? "bg-indigo-50/60 font-medium" : ""
+                        }`}
+                      >
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col gap-1">
+                            <span className="font-bold text-slate-900 group-hover:text-indigo-750 transition-colors">
+                              {proj.projectName}
+                            </span>
+                            {/* Mini horizontal bar representing spend share */}
+                            <div className="flex items-center gap-2">
+                              <div className="w-16 bg-slate-150 bg-slate-200 rounded-full h-1 overflow-hidden shrink-0">
+                                <div 
+                                  className="bg-indigo-600 h-full rounded-full" 
+                                  style={{ width: `${spendShare}%` }}
+                                />
+                              </div>
+                              <span className="text-[9px] text-slate-400 font-mono">
+                                {spendShare.toFixed(0)}% budget
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-center font-mono text-slate-600">
+                          {proj.campaignCount}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
+                          {formatINR(proj.totalSpend)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-emerald-600 font-bold">
+                          {formatIndianNumber(proj.totalLeads)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-600">
+                          {proj.conversionRate.toFixed(2)}%
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-medium text-slate-800">
+                          {proj.totalLeads > 0 ? formatINR(proj.cpa) : "₹0"}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-600">
+                          {proj.ctr.toFixed(2)}%
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase font-sans border ${
+                            isSelected 
+                              ? "bg-indigo-100 text-indigo-700 border-indigo-200"
+                              : "bg-slate-50 text-slate-500 border-slate-200 group-hover:border-indigo-200 group-hover:bg-indigo-55 group-hover:bg-indigo-50/50 group-hover:text-indigo-600"
+                          }`}>
+                            {isSelected ? "Filtered" : "Filter View"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* Advanced Interactive Campaigns Analytics & Intelligence Centre */}
           <div className="space-y-6" id="interactive-analytics-desktop">
             {/* Top Navigation & Config Workspace bar */}
@@ -939,7 +1165,7 @@ export default function Dashboard({
                             ? `Campaign Leaderboarding Matrix (Sorted by ${getMetricLabel(primaryMetric)})`
                             : activeAnalysisTab === "efficiency"
                               ? `Efficiency quadrant distribution: leads volume vs Cost Per Lead`
-                              : `Cumulative Digital Marketing Progression Timeline`
+                              : `Cumulative Performance Marketing Progression Timeline`
                         }
                       </span>
                     </h3>

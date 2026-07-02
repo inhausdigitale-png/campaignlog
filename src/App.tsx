@@ -48,12 +48,14 @@ import {
   ChevronDown,
   Upload,
   CalendarDays,
+  FileText,
 } from "lucide-react";
 
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "creatives" | "portals" | "targets" | "performance" | "download_reports" | "ai" | "sheets_sync" | "roles" | "comparison" | "daily_spend" | "activity_logs" | "auto_heal_agent">("dashboard");
   const [campaignsMenuOpen, setCampaignsMenuOpen] = useState(true);
+  const [reportsMenuOpen, setReportsMenuOpen] = useState(true);
 
   // Custom/Simulated Roles & Permissions state
   const [rolePermissions, setRolePermissions] = useState<Record<string, UserRolePermission>>(() => {
@@ -920,7 +922,10 @@ export default function App() {
               {/* Campaigns Collapsible Sub-menu Container */}
               <div className="space-y-1 pt-1">
                 <button
-                  onClick={() => setCampaignsMenuOpen(!campaignsMenuOpen)}
+                  onClick={() => {
+                    setActiveTab("campaigns");
+                    setCampaignsMenuOpen(true);
+                  }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
                     activeTab === "campaigns" || activeTab === "performance"
                       ? "bg-slate-100/90 text-slate-900 font-bold"
@@ -994,57 +999,81 @@ export default function App() {
                 <span>Portal Leads</span>
               </button>
 
-              {/* Central master Audit Logs btn */}
-              <button
-                id="sidebar_global_audit_logs_btn"
-                onClick={() => setActiveTab("activity_logs")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "activity_logs"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <History size={16} className="text-indigo-650 text-indigo-600" />
-                <span>Audit Logs &amp; History</span>
-              </button>
+              {/* Reports Collapsible Sub-menu Container */}
+              <div className="space-y-1 pt-1">
+                <button
+                  onClick={() => setReportsMenuOpen(!reportsMenuOpen)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
+                    activeTab === "daily_spend" || activeTab === "comparison" || activeTab === "targets"
+                      ? "bg-slate-100/90 text-slate-900 font-bold"
+                      : "hover:bg-slate-50 text-slate-700 hover:text-slate-900"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText size={16} />
+                    <span>Reports</span>
+                  </div>
+                  <ChevronDown
+                    size={13}
+                    className={`text-slate-400 transition-transform duration-250 ${reportsMenuOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
 
-              {/* Target performance comparison btn */}
-              <button
-                onClick={() => setActiveTab("comparison")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "comparison"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <ArrowUpDown size={16} />
-                <span>Target vs Performance</span>
-              </button>
+                {reportsMenuOpen && (
+                  <div className="pl-4 space-y-1.5 border-l-2 border-indigo-100 ml-5 mt-1 animate-fade-in">
+                    {/* Day-wise Spend */}
+                    <button
+                      onClick={() => setActiveTab("daily_spend")}
+                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer text-left text-[11px] ${
+                        activeTab === "daily_spend"
+                          ? "bg-indigo-50 text-indigo-700 font-bold shadow-3xs"
+                          : "hover:bg-slate-50 text-slate-600 hover:text-slate-950"
+                      }`}
+                    >
+                      <CalendarDays size={13} />
+                      <span>Daywise Spend</span>
+                    </button>
 
-              {/* Weekly Target Ledger btn */}
-              <button
-                onClick={() => setActiveTab("targets")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "targets"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <Coins size={16} />
-                <span>Weekly Target Ledger</span>
-              </button>
+                    {/* Target vs Performance */}
+                    <button
+                      onClick={() => setActiveTab("comparison")}
+                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer text-left text-[11px] ${
+                        activeTab === "comparison"
+                          ? "bg-indigo-50 text-indigo-700 font-bold shadow-3xs"
+                          : "hover:bg-slate-50 text-slate-600 hover:text-slate-950"
+                      }`}
+                    >
+                      <ArrowUpDown size={13} />
+                      <span>Target vs Performance</span>
+                    </button>
 
-              {/* Day-wise Spend btn */}
+                    {/* Weekly Target Ledger */}
+                    <button
+                      onClick={() => setActiveTab("targets")}
+                      className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer text-left text-[11px] ${
+                        activeTab === "targets"
+                          ? "bg-indigo-50 text-indigo-700 font-bold shadow-3xs"
+                          : "hover:bg-slate-50 text-slate-600 hover:text-slate-950"
+                      }`}
+                    >
+                      <Coins size={13} />
+                      <span>Weekly Target Ledger</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Data Imports (previously Google Sheets Sync) */}
               <button
-                onClick={() => setActiveTab("daily_spend")}
+                onClick={() => setActiveTab("sheets_sync")}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "daily_spend"
+                  activeTab === "sheets_sync"
                     ? "bg-indigo-50 text-indigo-700 font-semibold"
                     : "hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                <CalendarDays size={16} />
-                <span>Day-wise Spend</span>
+                <FileSpreadsheet size={16} />
+                <span>Data Imports</span>
               </button>
 
               {/* Exclusive Download Reports btn */}
@@ -1058,19 +1087,6 @@ export default function App() {
               >
                 <HardDriveDownload size={16} />
                 <span>Download Reports</span>
-              </button>
-
-              {/* Google Sheets Sync btn */}
-              <button
-                onClick={() => setActiveTab("sheets_sync")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
-                  activeTab === "sheets_sync"
-                    ? "bg-indigo-50 text-indigo-700 font-semibold"
-                    : "hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <FileSpreadsheet size={16} />
-                <span>Google Sheets Sync</span>
               </button>
 
               {/* AI Hub btn */}
@@ -1097,7 +1113,7 @@ export default function App() {
                 }`}
               >
                 <Shield size={16} />
-                <span>User Roles Settings</span>
+                <span>User Roles</span>
               </button>
 
               {/* Auto-Heal Agent Core btn */}
@@ -1114,7 +1130,21 @@ export default function App() {
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
                 <ShieldCheck size={16} className="text-emerald-600" />
-                <span>Auto-Heal Core</span>
+                <span>Auto Heal Core</span>
+              </button>
+
+              {/* Central master Audit Logs btn */}
+              <button
+                id="sidebar_global_audit_logs_btn"
+                onClick={() => setActiveTab("activity_logs")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer text-left ${
+                  activeTab === "activity_logs"
+                    ? "bg-indigo-50 text-indigo-700 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <History size={16} className="text-indigo-650 text-indigo-600" />
+                <span>Audit Logs &amp; History</span>
               </button>
             </nav>
           </div>

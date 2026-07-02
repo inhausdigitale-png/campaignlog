@@ -250,7 +250,7 @@ export default function GlobalActivityLogs({
             </div>
             <h2 className="text-xl lg:text-2xl font-black font-sans tracking-tight text-white mt-1">Application Audit Logs &amp; History</h2>
             <p className="text-slate-400 text-xs font-medium max-w-2xl leading-relaxed">
-              Consolidated real-time operational feed tracking system executions, digital marketing campaign changes, target ledger modifications, and prospect intake events.
+              Consolidated real-time operational feed tracking system executions, performance marketing campaign changes, target ledger modifications, and prospect intake events.
             </p>
           </div>
 

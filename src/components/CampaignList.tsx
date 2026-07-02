@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Campaign, ChangeLogEntry, UserRolePermission, MetricComparison, CreativeAsset } from "../types";
 import { formatINR, formatIndianNumber, formatIndianShort } from "../utils/indiaHelpers";
+import CampaignDashboardView from "./CampaignDashboardView";
 import {
   Plus,
   Search,
@@ -32,6 +33,7 @@ import {
   Activity,
   Sliders,
   Eye,
+  LayoutDashboard,
 } from "lucide-react";
 
 interface CampaignListProps {
@@ -109,7 +111,7 @@ export default function CampaignList({
   const [quickLogProgress, setQuickLogProgress] = useState("Implemented");
 
   // Comparative metrics section state variables
-  const [campaignSubTab, setCampaignSubTab] = useState<"list" | "ledger" | "compare">("list");
+  const [campaignSubTab, setCampaignSubTab] = useState<"dashboard" | "list" | "compare">("dashboard");
   const [compareAId, setCompareAId] = useState("");
   const [compareBId, setCompareBId] = useState("");
 
@@ -721,6 +723,18 @@ export default function CampaignList({
       <div className="bg-white border border-slate-200/85 p-1 rounded-xl shadow-xs flex select-none max-w-2xl" id="campaigns-tab-navigator">
         <button
           type="button"
+          onClick={() => setCampaignSubTab("dashboard")}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            campaignSubTab === "dashboard"
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "text-slate-500 hover:text-slate-800 hover:bg-slate-50/70"
+          }`}
+        >
+          <LayoutDashboard size={14} />
+          <span>Campaign Dashboard</span>
+        </button>
+        <button
+          type="button"
           onClick={() => setCampaignSubTab("list")}
           className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
             campaignSubTab === "list"
@@ -744,6 +758,30 @@ export default function CampaignList({
           <span>Comparative Metrics &amp; Sandbox</span>
         </button>
       </div>
+
+      {campaignSubTab === "dashboard" && (
+        <CampaignDashboardView
+          campaigns={campaigns}
+          changeLogs={changeLogs}
+          onApplyPlatformFilter={(platform) => {
+            setPlatformFilter(platform);
+            setCampaignSubTab("list");
+          }}
+          onApplyProjectFilter={(project) => {
+            setProjectFilter(project);
+            setCampaignSubTab("list");
+          }}
+          onApplyStatusFilter={(status) => {
+            setStatusFilter(status);
+            setCampaignSubTab("list");
+          }}
+          onSearchCampaign={(term) => {
+            setSearchTerm(term);
+            setCampaignSubTab("list");
+          }}
+          onAddNewCampaign={handleOpenCreateModal}
+        />
+      )}
 
       {campaignSubTab === "list" && (
         <>
