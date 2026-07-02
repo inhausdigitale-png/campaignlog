@@ -83,6 +83,23 @@ export default function CampaignDashboardView({
     const blendedConvRate = totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0;
     const budgetUtilization = totalBudget > 0 ? (totalSpend / totalBudget) * 100 : 0;
 
+    const uniqueAdsets = new Set<string>();
+    campaigns.forEach((c) => {
+      if (c.adset && c.adset.trim() !== "") {
+        uniqueAdsets.add(c.adset.trim());
+      } else if (c.objectives && c.objectives.includes("Adset: ")) {
+        const match = c.objectives.match(/Adset:\s*([^(|)]+)/);
+        if (match) {
+          uniqueAdsets.add(match[1].trim());
+        } else {
+          uniqueAdsets.add("Primary Ad Set");
+        }
+      } else {
+        uniqueAdsets.add("Primary Ad Set");
+      }
+    });
+    const totalAdsetsCount = campaigns.length > 0 ? uniqueAdsets.size : 0;
+
     return {
       totalCount,
       activeCount,
@@ -98,6 +115,7 @@ export default function CampaignDashboardView({
       blendedCtr,
       blendedConvRate,
       budgetUtilization,
+      totalAdsetsCount,
     };
   }, [campaigns]);
 
@@ -467,8 +485,11 @@ export default function CampaignDashboardView({
               </span>
               In Delivery
             </span>
+            <span className="text-[9.5px] text-slate-500 font-medium block mt-1.5">
+              Across <strong className="text-slate-700 font-semibold">{stats.totalAdsetsCount}</strong> unique adsets
+            </span>
           </div>
-          <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-100 transition-colors">
+          <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-100 transition-colors shrink-0">
             <CheckCircle size={16} />
           </div>
         </div>

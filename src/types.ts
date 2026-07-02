@@ -18,6 +18,7 @@ export interface Campaign {
   svcBooking?: number;
   adset?: string;
   creativeType?: "static" | "video";
+  adName?: string;
   campaignManager?: string;
   cpl?: number;
 }
@@ -280,6 +281,7 @@ export interface CampaignPerformance {
   creativeUpdatedAt?: string;
   creativeNewUpdatedFlag?: boolean;
   creativeType?: "static" | "video";
+  adName?: string;
   campaignManager?: string;
   cpl?: number;
 }

@@ -710,6 +710,7 @@ export default function App() {
         updatedAt: perf.createdAt || new Date().toISOString(),
         adset: perf.adsetName,
         creativeType: perf.creativeType,
+        adName: perf.adName,
         campaignManager: perf.campaignManager,
         cpl: perf.cpl,
       };
@@ -944,7 +945,7 @@ export default function App() {
 
                 {campaignsMenuOpen && (
                   <div className="pl-4 space-y-1.5 border-l-2 border-indigo-100 ml-5 mt-1 animate-fade-in">
-                    {/* Campaign Upload */}
+                    {/* Campaign */}
                     <button
                       onClick={() => setActiveTab("campaigns")}
                       className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer text-left text-[11px] ${
@@ -954,7 +955,7 @@ export default function App() {
                       }`}
                     >
                       <Upload size={13} />
-                      <span>Campaign Upload</span>
+                      <span>Campaign</span>
                     </button>
 
                     {/* Change Log */}

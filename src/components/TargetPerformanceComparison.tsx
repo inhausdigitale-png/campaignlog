@@ -76,7 +76,7 @@ export default function TargetPerformanceComparison({
   // Grouping option: "project" or "medium"
   const [groupingMode, setGroupingMode] = useState<"project" | "medium">("project");
   
-  // Data Source for actuals toggle: "target_ledger" (use achieved fields inside target rows) or "direct_campaigns" (use campaign upload results)
+  // Data Source for actuals toggle: "target_ledger" (use achieved fields inside target rows) or "direct_campaigns" (use campaign performance results)
   const [actualsSource, setActualsSource] = useState<"target_ledger" | "direct_campaigns">("target_ledger");
 
   // Get list of unique projects across targets and performances

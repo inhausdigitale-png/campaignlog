@@ -131,6 +131,8 @@ export default function CampaignPerformanceTracker({
   // Manual entry Form States
   const [campaignName, setCampaignName] = useState("");
   const [adsetName, setAdsetName] = useState("");
+  const [adName, setAdName] = useState("");
+  const [creativeType, setCreativeType] = useState<"static" | "video">("static");
   const [adAccountId, setAdAccountId] = useState("");
   const [projectName, setProjectName] = useState("");
   const [leads, setLeads] = useState<number>(0);
@@ -144,18 +146,18 @@ export default function CampaignPerformanceTracker({
 
   // Load the CSV mock template in the text box
   const loadCsvTemplate = () => {
-    const template = `Campaign Name,Adset Name,Ad Account ID,Project Name,Leads,Impression,Reach,CTR,Amount Spend,Clicks,SVC,Booked
-Meta Apartment - Lead Gen,LAL_RealEstate_Buyers,act_40391039,Grand Horizon Residence,45,61200,32000,1.45,35000,887,14,3
-Google Premium Villas,Search_Exact_Solar,act_20938491,Oakridge Estate,28,19800,9500,2.94,42000,582,10,1
-Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,4300,3.25,28000,305,6,0`;
+    const template = `Campaign Name,Adset Name,Ad Name,Ad Format,Ad Account ID,Project Name,Leads,Impression,Reach,CTR,Amount Spend,Clicks,SVC,Booked
+Meta Apartment - Lead Gen,LAL_RealEstate_Buyers,Luxury_Apartment_Static,static,act_40391039,Grand Horizon Residence,45,61200,32000,1.45,35000,887,14,3
+Google Premium Villas,Search_Exact_Solar,Premium_Villas_Video,video,act_20938491,Oakridge Estate,28,19800,9500,2.94,42000,582,10,1
+Meta B2B Commercial,CEO_Founders_Target,Commercial_B2B_Static,static,act_88491204,Capital Tower IT,14,9400,4300,3.25,28000,305,6,0`;
     setCsvText(template);
     setBulkFeedback("Template loaded! Review edit or add custom rows, then press 'Parse & Import'.");
   };
 
   const downloadCsvTemplateFile = () => {
-    const headers = "Campaign Name,Adset Name,Ad Account ID,Project Name,Leads,Impression,Reach,CTR,Amount Spend,Clicks,SVC,Booked\n";
-    const sampleRow1 = "Meta Apartment - Lead Gen,LAL_RealEstate_Buyers,act_40391039,Grand Horizon Residence,45,61200,32000,1.45,35000,887,14,3\n";
-    const sampleRow2 = "Google Premium Villas,Search_Exact_Solar,act_20938491,Oakridge Estate,28,19800,9500,2.94,42000,582,10,1\n";
+    const headers = "Campaign Name,Adset Name,Ad Name,Ad Format,Ad Account ID,Project Name,Leads,Impression,Reach,CTR,Amount Spend,Clicks,SVC,Booked\n";
+    const sampleRow1 = "Meta Apartment - Lead Gen,LAL_RealEstate_Buyers,Luxury_Apartment_Static,static,act_40391039,Grand Horizon Residence,45,61200,32000,1.45,35000,887,14,3\n";
+    const sampleRow2 = "Google Premium Villas,Search_Exact_Solar,Premium_Villas_Video,video,act_20938491,Oakridge Estate,28,19800,9500,2.94,42000,582,10,1\n";
     
     const blob = new Blob([headers + sampleRow1 + sampleRow2], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -184,7 +186,22 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
 
       // Check header values
       const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-      const hasCampaign = headers.includes("campaign name");
+      const campaignIndex = headers.indexOf("campaign name");
+      const adsetIndex = headers.indexOf("adset name");
+      const adNameIndex = headers.indexOf("ad name");
+      const adFormatIndex = headers.indexOf("ad format");
+      const adAccountIdIndex = headers.indexOf("ad account id");
+      const projectNameIndex = headers.indexOf("project name");
+      const leadsIndex = headers.findIndex(h => h === "leads" || h === "leads generated");
+      const impressionIndex = headers.findIndex(h => h === "impression" || h === "impressions");
+      const reachIndex = headers.indexOf("reach");
+      const ctrIndex = headers.indexOf("ctr");
+      const spendIndex = headers.findIndex(h => h === "amount spend" || h === "spend" || h === "amount spent");
+      const clicksIndex = headers.indexOf("clicks");
+      const svcIndex = headers.indexOf("svc");
+      const bookedIndex = headers.indexOf("booked");
+
+      const hasCampaign = campaignIndex !== -1 || headers.includes("campaign name");
       if (!hasCampaign) {
         setBulkFeedback("Error: Columns must have 'Campaign Name', 'Adset Name', 'Ad Account ID' and metrics.");
         return;
@@ -198,22 +215,37 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
         const cols = line.split(",").map((c) => c.trim());
         if (cols.length < 4) continue;
 
-        // Try to map by expected columns indexes
-        // Format: Campaign Name,Adset Name,Ad Account ID,Project Name,Leads,Impression,Reach,CTR,Amount Spend,Clicks,SVC,Booked
+        const getValue = (idx: number, fallback: string = "") => {
+          return (idx !== -1 && cols[idx] !== undefined) ? cols[idx].trim() : fallback;
+        };
+        const getInt = (idx: number, fallback: number = 0) => {
+          const val = getValue(idx);
+          return val ? parseInt(val) || 0 : fallback;
+        };
+        const getFloat = (idx: number, fallback: number = 0) => {
+          const val = getValue(idx);
+          return val ? parseFloat(val) || 0 : fallback;
+        };
+
+        const parsedCreativeType = getValue(adFormatIndex).toLowerCase();
+        const creativeType: "static" | "video" = (parsedCreativeType === "video" || parsedCreativeType === "reel" || parsedCreativeType === "motion") ? "video" : "static";
+
         const item: CampaignPerformance = {
           id: "perf-temp-" + Math.random().toString(36).substring(2, 9),
-          campaignName: cols[0] || "Unnamed Campaign",
-          adsetName: cols[1] || "Unnamed Adset",
-          adAccountId: cols[2] || "act_unknown",
-          projectName: cols[3] || "General Solar",
-          leads: parseInt(cols[4]) || 0,
-          impression: parseInt(cols[5]) || 0,
-          reach: parseInt(cols[6]) || 0,
-          ctr: parseFloat(cols[7]) || 0,
-          amountSpend: parseFloat(cols[8]) || 0,
-          clicks: parseInt(cols[9]) || 0,
-          svc: parseInt(cols[10]) || 0,
-          booked: parseInt(cols[11]) || 0,
+          campaignName: campaignIndex !== -1 ? getValue(campaignIndex) : cols[0] || "Unnamed Campaign",
+          adsetName: adsetIndex !== -1 ? getValue(adsetIndex) : cols[1] || "Unnamed Adset",
+          adName: adNameIndex !== -1 ? getValue(adNameIndex) : undefined,
+          creativeType,
+          adAccountId: adAccountIdIndex !== -1 ? getValue(adAccountIdIndex) : (adNameIndex !== -1 ? cols[4] : cols[2]) || "act_unknown",
+          projectName: projectNameIndex !== -1 ? getValue(projectNameIndex) : (adNameIndex !== -1 ? cols[5] : cols[3]) || "General Solar",
+          leads: getInt(leadsIndex, adNameIndex !== -1 ? parseInt(cols[6]) || 0 : parseInt(cols[4]) || 0),
+          impression: getInt(impressionIndex, adNameIndex !== -1 ? parseInt(cols[7]) || 0 : parseInt(cols[5]) || 0),
+          reach: getInt(reachIndex, adNameIndex !== -1 ? parseInt(cols[8]) || 0 : parseInt(cols[6]) || 0),
+          ctr: getFloat(ctrIndex, adNameIndex !== -1 ? parseFloat(cols[9]) || 0 : parseFloat(cols[7]) || 0),
+          amountSpend: getFloat(spendIndex, adNameIndex !== -1 ? parseFloat(cols[10]) || 0 : parseFloat(cols[8]) || 0),
+          clicks: getInt(clicksIndex, adNameIndex !== -1 ? parseInt(cols[11]) || 0 : parseInt(cols[9]) || 0),
+          svc: getInt(svcIndex, adNameIndex !== -1 ? parseInt(cols[12]) || 0 : parseInt(cols[10]) || 0),
+          booked: getInt(bookedIndex, adNameIndex !== -1 ? parseInt(cols[13]) || 0 : parseInt(cols[11]) || 0),
           createdAt: new Date().toISOString()
         };
 
@@ -266,6 +298,8 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
       id: "perf-temp-" + Math.random().toString(36).substring(2, 9),
       campaignName,
       adsetName,
+      adName: adName.trim() || undefined,
+      creativeType,
       adAccountId: adAccountId || "act_manual",
       projectName,
       leads,
@@ -285,6 +319,8 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
       // Reset
       setCampaignName("");
       setAdsetName("");
+      setAdName("");
+      setCreativeType("static");
       setAdAccountId("");
       setProjectName("");
       setLeads(0);
@@ -336,10 +372,10 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
               Tracker Module
             </span>
             <span className="text-slate-300">/</span>
-            <span className="text-xs text-slate-500 font-medium font-sans">Campaign Upload &amp; Change Log</span>
+            <span className="text-xs text-slate-500 font-medium font-sans">Campaign &amp; Change Log</span>
           </div>
           <h2 className="text-lg font-bold font-display text-slate-900 tracking-tight">
-            Campaign Upload &amp; Change Log
+            Campaign &amp; Change Log
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             Upload CSV sheets or log manual metrics for campaigns, adsets, impressions, clicks, SVC, bookings, and calculated CPL.
@@ -567,6 +603,27 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
               />
             </div>
             <div>
+              <label className="block text-slate-500 mb-1">Ad Name</label>
+              <input 
+                type="text" 
+                value={adName} 
+                onChange={(e) => setAdName(e.target.value)}
+                placeholder="e.g. Luxury_Apartment_Static" 
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium" 
+              />
+            </div>
+            <div>
+              <label className="block text-slate-500 mb-1">Ad Format (Format Type)</label>
+              <select
+                value={creativeType}
+                onChange={(e) => setCreativeType(e.target.value as "static" | "video")}
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium" 
+              >
+                <option value="static">Static Banner / Image Ad</option>
+                <option value="video">Pre-roll Video / Reel / Motion Ad</option>
+              </select>
+            </div>
+            <div>
               <label className="block text-slate-500 mb-1">Ad Account ID*</label>
               <input 
                 type="text" 
@@ -731,6 +788,8 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
               <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px] select-none">
                 <th className="p-4 pl-5">Campaign Name</th>
                 <th className="p-4">Adset Name</th>
+                <th className="p-4">Ad Name</th>
+                <th className="p-4">Ad Format</th>
                 <th className="p-4">Ad Account ID</th>
                 <th className="p-4">Project</th>
                 <th className="p-4 text-center bg-emerald-50/30 text-emerald-800 border-x border-slate-100">Leads Generated</th>
@@ -749,7 +808,7 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
             <tbody className="divide-y divide-slate-200 font-medium text-slate-700">
               {filteredPerformances.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="p-12 text-center text-slate-400">
+                  <td colSpan={17} className="p-12 text-center text-slate-400">
                     <Info size={22} className="mx-auto text-slate-300 mb-2" />
                     <p className="font-extrabold text-sm text-slate-700">No active campaign performance rows found.</p>
                     <p className="text-[11px] text-slate-400 mt-1">Change search filters, select another project view, or upload a fresh CSV file above.</p>
@@ -809,6 +868,30 @@ Meta B2B Commercial,CEO_Founders_Target,act_88491204,Capital Tower IT,14,9400,43
                         <div className="max-w-[140px] truncate" title={p.adsetName}>
                           <span className="font-mono text-[10.5px] text-slate-600 block leading-tight truncate">{p.adsetName}</span>
                         </div>
+                      </td>
+
+                      {/* Ad Name */}
+                      <td className="p-4">
+                        <div className="max-w-[140px] truncate" title={p.adName || "None"}>
+                          {p.adName ? (
+                            <span className="font-mono text-[10.5px] text-amber-700 bg-amber-55 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 block truncate text-center font-bold">
+                              {p.adName}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic text-[10.5px]">-</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Ad Format */}
+                      <td className="p-4">
+                        <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase ${
+                          p.creativeType === "video" 
+                            ? "text-rose-700 bg-rose-50 border-rose-200" 
+                            : "text-indigo-700 bg-indigo-50 border-indigo-200"
+                        }`}>
+                          {p.creativeType === "video" ? "📹 Video" : "🖼️ Static"}
+                        </span>
                       </td>
                       
                       {/* Ad Account ID */}

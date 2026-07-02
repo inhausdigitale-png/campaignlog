@@ -392,6 +392,23 @@ export default function Dashboard({
   const staticCreativesCount = filteredCampaigns.filter(c => c.creativeType !== "video").length;
   const videoCreativesCount = filteredCampaigns.filter(c => c.creativeType === "video").length;
 
+  const uniqueAdsets = new Set<string>();
+  filteredCampaigns.forEach((c) => {
+    if (c.adset && c.adset.trim() !== "") {
+      uniqueAdsets.add(c.adset.trim());
+    } else if (c.objectives && c.objectives.includes("Adset: ")) {
+      const match = c.objectives.match(/Adset:\s*([^(|)]+)/);
+      if (match) {
+        uniqueAdsets.add(match[1].trim());
+      } else {
+        uniqueAdsets.add("Primary Ad Set");
+      }
+    } else {
+      uniqueAdsets.add("Primary Ad Set");
+    }
+  });
+  const totalAdsetsCount = filteredCampaigns.length > 0 ? uniqueAdsets.size : 0;
+
   // Recharts: Data grouped dynamically based on current output criteria
   const platformGroupDataMap = filteredCampaigns.reduce((acc, c) => {
     if (!acc[c.platform]) {
@@ -536,7 +553,7 @@ export default function Dashboard({
                 </span>
               </h4>
               <p className="text-[11px] text-indigo-800 mt-0.5">
-                New creative assets have been updated in Campaign Upload &amp; Change Log.
+                New creative assets have been updated in Campaign &amp; Change Log.
               </p>
               
               {/* Mini thumbnails list */}
@@ -829,8 +846,11 @@ export default function Dashboard({
               </span>
               In Delivery
             </span>
+            <span className="text-[9.5px] text-slate-500 font-medium block mt-1.5">
+              Across <strong className="text-slate-700 font-semibold">{totalAdsetsCount}</strong> unique adsets
+            </span>
           </div>
-          <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-100 transition-colors">
+          <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-100 transition-colors shrink-0">
             <CheckCircle2 size={16} />
           </div>
         </div>

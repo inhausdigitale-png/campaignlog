@@ -111,7 +111,7 @@ export default function CampaignList({
   const [quickLogProgress, setQuickLogProgress] = useState("Implemented");
 
   // Comparative metrics section state variables
-  const [campaignSubTab, setCampaignSubTab] = useState<"dashboard" | "list" | "compare">("dashboard");
+  const [campaignSubTab, setCampaignSubTab] = useState<"list" | "compare">("list");
   const [compareAId, setCompareAId] = useState("");
   const [compareBId, setCompareBId] = useState("");
 
@@ -168,6 +168,7 @@ export default function CampaignList({
   const [formObjectives, setFormObjectives] = useState("");
   const [formEditReason, setFormEditReason] = useState("");
   const [formAdset, setFormAdset] = useState("");
+  const [formAdName, setFormAdName] = useState("");
   const [formCreativeType, setFormCreativeType] = useState<"static" | "video">("static");
   const [formCampaignManager, setFormCampaignManager] = useState("");
   const [formCpl, setFormCpl] = useState<number | "">("");
@@ -215,6 +216,7 @@ export default function CampaignList({
     setFormObjectives("");
     setFormEditReason("");
     setFormAdset("");
+    setFormAdName("");
     setFormCreativeType("static");
     setFormCampaignManager("");
     setFormCpl("");
@@ -238,6 +240,7 @@ export default function CampaignList({
     setFormObjectives(c.objectives || "");
     setFormEditReason("");
     setFormAdset(c.adset || "");
+    setFormAdName(c.adName || "");
     setFormCreativeType(c.creativeType || "static");
     setFormCampaignManager(c.campaignManager || "");
     setFormCpl(c.cpl !== undefined ? c.cpl : "");
@@ -267,6 +270,7 @@ export default function CampaignList({
       updatedAt: new Date().toISOString(),
       adset: formAdset.trim() || undefined,
       creativeType: formCreativeType,
+      adName: formAdName.trim() || undefined,
       campaignManager: formCampaignManager.trim() || undefined,
       cpl: formCpl !== "" ? Number(formCpl) : undefined,
     };
@@ -307,6 +311,9 @@ export default function CampaignList({
       }
       if ((editingCampaign.adset || "") !== formAdset) {
         changes.push(`Adset: "${editingCampaign.adset || "None"}" ➔ "${formAdset || "None"}"`);
+      }
+      if ((editingCampaign.adName || "") !== formAdName) {
+        changes.push(`Ad Name: "${editingCampaign.adName || "None"}" ➔ "${formAdName || "None"}"`);
       }
       if ((editingCampaign.creativeType || "static") !== formCreativeType) {
         changes.push(`Format: "${editingCampaign.creativeType || "static"}" ➔ "${formCreativeType}"`);
@@ -580,20 +587,26 @@ export default function CampaignList({
   const blendedCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : (totalClicks > 0 ? 1.25 : 0);
 
   // Advanced dynamic calculations for layman campaign summaries
-  const uniqueAdsets = new Set();
+  const uniqueAdsets = new Set<string>();
   filteredCampaigns.forEach((c) => {
-    if (c.objectives && c.objectives.includes("Adset: ")) {
+    if (c.adset && c.adset.trim() !== "") {
+      uniqueAdsets.add(c.adset.trim());
+    } else if (c.objectives && c.objectives.includes("Adset: ")) {
       const match = c.objectives.match(/Adset:\s*([^(|)]+)/);
       if (match) {
         uniqueAdsets.add(match[1].trim());
       } else {
-        uniqueAdsets.add("Default_Adset_" + c.id);
+        uniqueAdsets.add("Primary Ad Set");
       }
     } else {
-      uniqueAdsets.add("Default_Adset_" + c.id);
+      uniqueAdsets.add("Primary Ad Set");
     }
   });
-  const totalAdsetsCount = uniqueAdsets.size;
+  const totalAdsetsCount = filteredCampaigns.length > 0 ? uniqueAdsets.size : 0;
+
+  // Calculate static and video format counts for campaigns
+  const staticFormatCount = filteredCampaigns.filter(c => c.creativeType !== "video").length;
+  const videoFormatCount = filteredCampaigns.filter(c => c.creativeType === "video").length;
 
   const filteredCampaignIds = new Set(filteredCampaigns.map((c) => c.id));
   const associatedCreatives = (creatives || []).filter((cr) => filteredCampaignIds.has(cr.campaignId));
@@ -720,19 +733,7 @@ export default function CampaignList({
   return (
     <div className="space-y-6">
       {/* Premium Campaigns Sub-Tabs Navigator */}
-      <div className="bg-white border border-slate-200/85 p-1 rounded-xl shadow-xs flex select-none max-w-2xl" id="campaigns-tab-navigator">
-        <button
-          type="button"
-          onClick={() => setCampaignSubTab("dashboard")}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-            campaignSubTab === "dashboard"
-              ? "bg-indigo-600 text-white shadow-sm"
-              : "text-slate-500 hover:text-slate-800 hover:bg-slate-50/70"
-          }`}
-        >
-          <LayoutDashboard size={14} />
-          <span>Campaign Dashboard</span>
-        </button>
+      <div className="bg-white border border-slate-200/85 p-1 rounded-xl shadow-xs flex select-none max-w-md" id="campaigns-tab-navigator">
         <button
           type="button"
           onClick={() => setCampaignSubTab("list")}
@@ -743,7 +744,7 @@ export default function CampaignList({
           }`}
         >
           <Layers size={14} />
-          <span>Active Campaigns List</span>
+          <span>Campaign Overview</span>
         </button>
         <button
           type="button"
@@ -758,30 +759,6 @@ export default function CampaignList({
           <span>Comparative Metrics &amp; Sandbox</span>
         </button>
       </div>
-
-      {campaignSubTab === "dashboard" && (
-        <CampaignDashboardView
-          campaigns={campaigns}
-          changeLogs={changeLogs}
-          onApplyPlatformFilter={(platform) => {
-            setPlatformFilter(platform);
-            setCampaignSubTab("list");
-          }}
-          onApplyProjectFilter={(project) => {
-            setProjectFilter(project);
-            setCampaignSubTab("list");
-          }}
-          onApplyStatusFilter={(status) => {
-            setStatusFilter(status);
-            setCampaignSubTab("list");
-          }}
-          onSearchCampaign={(term) => {
-            setSearchTerm(term);
-            setCampaignSubTab("list");
-          }}
-          onAddNewCampaign={handleOpenCreateModal}
-        />
-      )}
 
       {campaignSubTab === "list" && (
         <>
@@ -830,7 +807,7 @@ export default function CampaignList({
               onClick={() => setSimpleViewMode(true)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-xs font-bold font-display cursor-pointer ${
                 simpleViewMode
-                  ? "bg-white text-indigo-705 text-indigo-650 shadow-xs"
+                  ? "bg-white text-indigo-600 shadow-xs border border-slate-200/50"
                   : "text-slate-500 hover:text-slate-800"
               }`}
               title="Compact and simple view with expandable update details"
@@ -842,7 +819,7 @@ export default function CampaignList({
               onClick={() => setSimpleViewMode(false)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-xs font-bold font-display cursor-pointer ${
                 !simpleViewMode
-                  ? "bg-white text-indigo-705 text-indigo-650 shadow-xs"
+                  ? "bg-white text-indigo-600 shadow-xs border border-slate-200/50"
                   : "text-slate-500 hover:text-slate-800"
               }`}
               title="Detailed view showing all updates and creatives permanently inline"
@@ -928,21 +905,33 @@ export default function CampaignList({
             <span className="text-base font-extrabold text-slate-900 block mt-0.5 font-mono">
               {totalAdsetsCount}
             </span>
-            <span className="text-[10px] text-slate-500 block truncate">Target groupings</span>
+            <span className="text-[10px] text-slate-500 block truncate font-medium mt-0.5">
+              Mapped target groups
+            </span>
           </div>
         </div>
 
-        {/* Card 3: Total Creatives */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4.5 shadow-xs flex items-center gap-3.5 hover:border-slate-350 hover:shadow-sm transition-all">
+        {/* Card 3: Creative Format */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center gap-3 hover:border-slate-350 hover:shadow-sm transition-all min-w-0">
           <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-600 shrink-0">
             <Sparkles size={17} />
           </div>
-          <div className="min-w-0">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block leading-tight">Total Creatives</span>
-            <span className="text-base font-extrabold text-slate-900 block mt-0.5 font-mono">
-              {totalCreativesCount}
-            </span>
-            <span className="text-[10px] text-slate-500 block truncate">Ad variants list</span>
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block leading-tight">Creative Format</span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-base font-extrabold text-slate-900 font-mono leading-none">
+                {totalCreativesCount}
+              </span>
+              <span className="text-[9px] text-slate-500 font-medium">total</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1 mt-1">
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-slate-600 bg-slate-50 px-1 py-0.5 rounded border border-slate-100/80 leading-none">
+                🖼️ {staticFormatCount} Static
+              </span>
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-slate-600 bg-slate-50 px-1 py-0.5 rounded border border-slate-100/80 leading-none">
+                📹 {videoFormatCount} Video
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1205,12 +1194,12 @@ export default function CampaignList({
                   </th>
                   <th className="p-4 w-[340px]">Campaign &amp; Platform</th>
                   <th className="p-4 text-center">Status</th>
-                  <th className="p-4 text-center">Date Range</th>
+                  {!simpleViewMode && <th className="p-4 text-center">Date Range</th>}
                   <th className="p-4 text-center">Amount Spent</th>
-                  <th className="p-4 text-center">Impressions</th>
-                  <th className="p-4 text-center">Clicks (CTR)</th>
+                  {!simpleViewMode && <th className="p-4 text-center">Impressions</th>}
+                  {!simpleViewMode && <th className="p-4 text-center">Clicks (CTR)</th>}
                   <th className="p-4 text-center">Leads</th>
-                  <th className="p-4 text-center">SVC Booking</th>
+                  {!simpleViewMode && <th className="p-4 text-center">SVC Booking</th>}
                   <th className="p-4 text-center">Est. ROAS</th>
                   <th className="p-4 text-center">Actions</th>
                 </tr>
@@ -1269,12 +1258,18 @@ export default function CampaignList({
                         </span>
 
                         {/* Operational tags row */}
-                        {(c.adset || c.creativeType || c.campaignManager) && (
+                        {(c.adset || c.creativeType || c.adName || c.campaignManager) && (
                           <div className="flex flex-wrap items-center gap-1 mt-1 pl-0.5">
                             {c.adset && (
                               <span className="inline-flex items-center gap-1 text-[9px] font-sans text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200" title={`Adset: ${c.adset}`}>
                                 <span className="font-extrabold text-[8px] uppercase text-slate-400 font-display">Set:</span>
                                 <span className="font-bold truncate max-w-[130px]">{c.adset}</span>
+                              </span>
+                            )}
+                            {c.adName && (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-sans text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200" title={`Ad Name: ${c.adName}`}>
+                                <span className="font-extrabold text-[8px] uppercase text-amber-500 font-display">Ad:</span>
+                                <span className="font-bold truncate max-w-[130px]">{c.adName}</span>
                               </span>
                             )}
                             {c.creativeType && (
@@ -1430,12 +1425,14 @@ export default function CampaignList({
                       </td>
 
                       {/* Date Range */}
-                      <td className="p-4 text-center text-slate-500 text-[11px] font-mono whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-1">
-                          <Calendar size={11} className="text-slate-400 shrink-0" />
-                          <span>{c.startDate || "N/A"} - {c.endDate || "N/A"}</span>
-                        </div>
-                      </td>
+                      {!simpleViewMode && (
+                        <td className="p-4 text-center text-slate-500 text-[11px] font-mono whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1">
+                            <Calendar size={11} className="text-slate-400 shrink-0" />
+                            <span>{c.startDate || "N/A"} - {c.endDate || "N/A"}</span>
+                          </div>
+                        </td>
+                      )}
 
                       {/* Spend */}
                       <td className="p-4 text-center font-mono text-slate-800 font-bold whitespace-nowrap">
@@ -1448,15 +1445,19 @@ export default function CampaignList({
                       </td>
 
                       {/* Impressions */}
-                      <td className="p-4 text-center font-mono whitespace-nowrap">
-                        <div className="font-bold text-slate-800">{c.impressions.toLocaleString()}</div>
-                      </td>
+                      {!simpleViewMode && (
+                        <td className="p-4 text-center font-mono whitespace-nowrap">
+                          <div className="font-bold text-slate-800">{c.impressions.toLocaleString()}</div>
+                        </td>
+                      )}
 
                       {/* Clicks (CTR) */}
-                      <td className="p-4 text-center font-mono whitespace-nowrap">
-                        <div className="font-bold text-slate-800">{c.clicks.toLocaleString()}</div>
-                        <div className="text-[9.5px] text-slate-400">({clicksCTR}%)</div>
-                      </td>
+                      {!simpleViewMode && (
+                        <td className="p-4 text-center font-mono whitespace-nowrap">
+                          <div className="font-bold text-slate-800">{c.clicks.toLocaleString()}</div>
+                          <div className="text-[9.5px] text-slate-400">({clicksCTR}%)</div>
+                        </td>
+                      )}
 
                       {/* Leads */}
                       <td className="p-4 text-center font-mono whitespace-nowrap">
@@ -1470,10 +1471,12 @@ export default function CampaignList({
                       </td>
 
                       {/* SVC Booking */}
-                      <td className="p-4 text-center font-mono whitespace-nowrap">
-                        <div className="font-bold text-indigo-800">{svcVal.toLocaleString()}</div>
-                        <div className="text-[9.5px] text-slate-450">({svcPercent}%)</div>
-                      </td>
+                      {!simpleViewMode && (
+                        <td className="p-4 text-center font-mono whitespace-nowrap">
+                          <div className="font-bold text-indigo-800">{svcVal.toLocaleString()}</div>
+                          <div className="text-[9.5px] text-slate-450">({svcPercent}%)</div>
+                        </td>
+                      )}
 
                       {/* Est. ROAS */}
                       <td className="p-4 text-center font-mono font-bold text-indigo-700 bg-indigo-50/20 whitespace-nowrap">
@@ -3166,6 +3169,18 @@ export default function CampaignList({
                     placeholder="e.g. LAL_5%_RealEstate_Buyers"
                     value={formAdset}
                     onChange={(e) => setFormAdset(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-705 bg-white"
+                  />
+                </div>
+
+                {/* Ad Name */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Ad Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Prime_Villa_Static_v2"
+                    value={formAdName}
+                    onChange={(e) => setFormAdName(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-705 bg-white"
                   />
                 </div>

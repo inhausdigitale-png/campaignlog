@@ -72,7 +72,7 @@ export default function OnboardingGuide({ onNavigate }: OnboardingGuideProps) {
       icon: Megaphone,
       color: "bg-emerald-50 text-emerald-700 border-emerald-100",
       targetTab: "performance",
-      visualText: "Check the 'Campaign List' & 'Campaign Upload & Change Log' tabs.",
+      visualText: "Check the 'Campaign' & 'Change Log' tabs.",
       bulletPoints: [
         "Ad Campaigns: View current spends, conversion rates, and CTR.",
         "Bulk Upload: Import agency performance spreadsheets directly.",
